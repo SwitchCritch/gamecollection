@@ -311,7 +311,7 @@ async function updateLookupStatus(game = null) {
       $('#lookupBtn').disabled = false;
     } else {
       $('#lookupMessage').classList.add('error');
-      $('#lookupMessage').innerHTML = '<strong>Automatic lookup is not configured yet.</strong> Add <code>RAWG_API_KEY</code> in Railway → Variables, then redeploy. Manual entry still works.';
+      $('#lookupMessage').innerHTML = '<strong>Automatic lookup is not configured yet.</strong> Add <code>MOBYGAMES_API_KEY</code> in Railway → Variables, then redeploy. Manual entry still works.';
       $('#lookupBtn').disabled = true;
     }
   } catch (err) {
@@ -366,7 +366,7 @@ async function selectLookupGame(id) {
     $('#genres').value = (g.genres || []).join(', ');
     $('#cover').value = g.cover || '';
     $('#description').value = g.description || '';
-    $('#sourceProvider').value = g.source?.provider || 'RAWG';
+    $('#sourceProvider').value = g.source?.provider || 'MobyGames';
     $('#sourceId').value = g.source?.id || String(id);
     $('#sourceUrl').value = g.source?.url || '';
     $('#lookupQuery').value = g.title || $('#lookupQuery').value;
@@ -507,7 +507,7 @@ async function openAdmin() {
     }
     const health = await api('/api/health');
     $('#adminSessionText').textContent = `Logged in as ${auth.username}`;
-    $('#storageStatus').innerHTML = `${health.persistent ? '✓ Persistent Railway storage detected at <strong>/data</strong>. Your collection and admin login survive redeploys.' : '⚠ Running with local project storage. On Railway, mount a Volume at <strong>/data</strong> for persistence.'}<br>${health.lookupConfigured ? '✓ Automatic RAWG game lookup is configured.' : '⚠ Automatic lookup is OFF. Add <strong>RAWG_API_KEY</strong> in Railway → Variables.'}`;
+    $('#storageStatus').innerHTML = `${health.persistent ? '✓ Persistent Railway storage detected at <strong>/data</strong>. Your collection and admin login survive redeploys.' : '⚠ Running with local project storage. On Railway, mount a Volume at <strong>/data</strong> for persistence.'}<br>${health.lookupConfigured ? '✓ Automatic MobyGames game lookup is configured.' : '⚠ Automatic lookup is OFF. Add <strong>MOBYGAMES_API_KEY</strong> in Railway → Variables.'}`;
     $('#adminRows').innerHTML = games.map(g => `<tr><td><strong>${esc(g.title)}</strong><div class="game-meta">${esc(copiesText(g))}</div></td><td>${g.copies?.length || 0}</td><td>${esc(g.status)}</td><td><div class="row-actions"><button class="tiny edit-game" data-id="${g.id}">Edit</button><button class="tiny danger delete-game" data-id="${g.id}">Delete</button></div></td></tr>`).join('') || '<tr><td colspan="4">No games added yet.</td></tr>';
     $$('.edit-game').forEach(b => b.addEventListener('click', () => { $('#adminDialog').close(); openForm(games.find(g => g.id === b.dataset.id)); }));
     $$('.delete-game').forEach(b => b.addEventListener('click', async () => {

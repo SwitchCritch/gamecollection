@@ -9,8 +9,8 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || (fs.existsSync('/data') ? '/data' : path.join(__dirname, 'data'));
 const DATA_FILE = path.join(DATA_DIR, 'collection.json');
-const RAWG_API_KEY = process.env.RAWG_API_KEY || '';
-const RAWG_BASE = 'https://api.rawg.io/api';
+const MOBYGAMES_API_KEY = process.env.MOBYGAMES_API_KEY || '';
+const MOBYGAMES_BASE = 'https://api.mobygames.com/v1';
 const COOKIE_NAME = 'cgc_admin';
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || '').trim();
@@ -221,77 +221,142 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-function cleanRawgText(value = '') {
-  return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+function cleanLookupText(value = '') {
+  return String(value || '')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s+/g, '\n')
+    .trim();
 }
 
-function rawgPlatformNames(game = {}) {
-  return (game.platforms || []).map(p => p?.platform?.name).filter(Boolean);
+function mobyPlatformNames(game = {}) {
+  return (game.platforms || []).map(p => p?.platform_name || p?.name).filter(Boolean);
 }
 
-function mapRawgSearchResult(game = {}) {
+function mobyGenreNames(game = {}) {
+  return (game.genres || []).map(g => g?.genre_name || g?.name).filter(Boolean);
+}
+
+function mobyCompanyNames(value) {
+  if (!value) return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list.map(x => {
+    if (typeof x === 'string') return x;
+    return x?.developer_name || x?.publisher_name || x?.company_name || x?.name || '';
+  }).filter(Boolean);
+}
+
+function mobyCover(game = {}) {
+  return game.sample_cover?.image || game.sample_cover?.thumbnail_image || '';
+}
+
+function mobyReleaseDate(game = {}) {
+  const dates = (game.platforms || []).map(p => p?.first_release_date).filter(Boolean).sort();
+  return dates[0] || game.release_date || '';
+}
+
+function mapMobySearchResult(game = {}) {
+  const releaseDate = mobyReleaseDate(game);
   return {
-    id: game.id,
-    title: game.name || '',
-    releaseDate: game.released || '',
-    year: game.released ? String(game.released).slice(0, 4) : '',
-    cover: game.background_image || '',
-    platforms: rawgPlatformNames(game),
-    genres: (game.genres || []).map(g => g.name).filter(Boolean),
-    metacritic: game.metacritic || null,
-    sourceUrl: game.slug ? `https://rawg.io/games/${game.slug}` : ''
+    id: game.game_id ?? game.id,
+    title: game.title || '',
+    releaseDate,
+    year: releaseDate ? String(releaseDate).slice(0, 4) : '',
+    cover: mobyCover(game),
+    platforms: mobyPlatformNames(game),
+    genres: mobyGenreNames(game),
+    score: game.moby_score ?? null,
+    sourceUrl: game.moby_url || ''
   };
+}
+
+async function mobyFetch(pathname, params = {}) {
+  const url = new URL(`${MOBYGAMES_BASE}${pathname}`);
+  url.searchParams.set('api_key', MOBYGAMES_API_KEY);
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+  }
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'CritchellGameCollection/1.3',
+      'Accept': 'application/json'
+    }
+  });
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const body = await response.json();
+      detail = body?.message || body?.error || '';
+    } catch {}
+    const err = new Error(`MobyGames returned ${response.status}${detail ? `: ${detail}` : ''}`);
+    err.status = response.status;
+    throw err;
+  }
+  return response.json();
 }
 
 // Lookup is admin-only because it feeds the Add/Edit form.
 app.get('/api/lookup/status', requireAdmin, (req, res) => {
-  res.json({ provider: 'RAWG', configured: Boolean(RAWG_API_KEY), attributionUrl: 'https://rawg.io/' });
+  res.json({
+    provider: 'MobyGames',
+    configured: Boolean(MOBYGAMES_API_KEY),
+    attributionUrl: 'https://www.mobygames.com/'
+  });
 });
 
 app.get('/api/lookup/search', requireAdmin, async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (!q) return res.status(400).json({ error: 'Enter a game title to search' });
-  if (!RAWG_API_KEY) return res.status(503).json({ error: 'Automatic game lookup needs RAWG_API_KEY in Railway → Variables.' });
+  if (!MOBYGAMES_API_KEY) {
+    return res.status(503).json({ error: 'Automatic game lookup needs MOBYGAMES_API_KEY in Railway → Variables.' });
+  }
   try {
-    const url = new URL(`${RAWG_BASE}/games`);
-    url.searchParams.set('key', RAWG_API_KEY);
-    url.searchParams.set('search', q);
-    url.searchParams.set('search_precise', 'true');
-    url.searchParams.set('page_size', '12');
-    const response = await fetch(url, { headers: { 'User-Agent': 'CritchellGameCollection/1.2' } });
-    if (!response.ok) throw new Error(`RAWG returned ${response.status}`);
-    const data = await response.json();
-    res.json({ provider: 'RAWG', query: q, results: (data.results || []).map(mapRawgSearchResult) });
+    const data = await mobyFetch('/games', { title: q, format: 'normal', limit: 12 });
+    res.json({ provider: 'MobyGames', query: q, results: (data.games || []).map(mapMobySearchResult) });
   } catch (err) {
-    console.error('RAWG search failed:', err);
-    res.status(502).json({ error: 'Could not search the game database right now. Please try again.' });
+    console.error('MobyGames search failed:', err);
+    if (err.status === 401) return res.status(502).json({ error: 'MobyGames rejected the API key. Check MOBYGAMES_API_KEY in Railway → Variables.' });
+    if (err.status === 429) return res.status(429).json({ error: 'MobyGames rate limit reached. Wait a few seconds and try again.' });
+    res.status(502).json({ error: 'Could not search MobyGames right now. Please try again.' });
   }
 });
 
 app.get('/api/lookup/game/:id', requireAdmin, async (req, res) => {
-  if (!RAWG_API_KEY) return res.status(503).json({ error: 'Automatic game lookup needs RAWG_API_KEY in Railway → Variables.' });
+  if (!MOBYGAMES_API_KEY) {
+    return res.status(503).json({ error: 'Automatic game lookup needs MOBYGAMES_API_KEY in Railway → Variables.' });
+  }
   try {
-    const url = new URL(`${RAWG_BASE}/games/${encodeURIComponent(req.params.id)}`);
-    url.searchParams.set('key', RAWG_API_KEY);
-    const response = await fetch(url, { headers: { 'User-Agent': 'CritchellGameCollection/1.2' } });
-    if (!response.ok) throw new Error(`RAWG returned ${response.status}`);
-    const g = await response.json();
+    const g = await mobyFetch(`/games/${encodeURIComponent(req.params.id)}`, { format: 'normal' });
+    const releaseDate = mobyReleaseDate(g);
+    const developers = mobyCompanyNames(g.developers || g.developer || g.companies?.developers);
+    const publishers = mobyCompanyNames(g.publishers || g.publisher || g.companies?.publishers);
     res.json({
-      id: g.id,
-      title: g.name || '',
-      releaseDate: g.released || '',
-      cover: g.background_image || '',
-      developer: (g.developers || []).map(x => x.name).filter(Boolean).join(', '),
-      publisher: (g.publishers || []).map(x => x.name).filter(Boolean).join(', '),
-      genres: (g.genres || []).map(x => x.name).filter(Boolean),
-      description: cleanRawgText(g.description_raw || g.description || ''),
-      platforms: rawgPlatformNames(g),
-      website: g.website || '',
-      source: { provider: 'RAWG', id: String(g.id), url: g.slug ? `https://rawg.io/games/${g.slug}` : 'https://rawg.io/' }
+      id: g.game_id ?? g.id,
+      title: g.title || '',
+      releaseDate,
+      cover: mobyCover(g),
+      developer: developers.join(', '),
+      publisher: publishers.join(', '),
+      genres: mobyGenreNames(g),
+      description: cleanLookupText(g.description || g.game_description || ''),
+      platforms: mobyPlatformNames(g),
+      website: g.official_url || '',
+      source: {
+        provider: 'MobyGames',
+        id: String(g.game_id ?? g.id ?? req.params.id),
+        url: g.moby_url || 'https://www.mobygames.com/'
+      }
     });
   } catch (err) {
-    console.error('RAWG detail failed:', err);
-    res.status(502).json({ error: 'Could not load that game from the game database right now.' });
+    console.error('MobyGames detail failed:', err);
+    if (err.status === 401) return res.status(502).json({ error: 'MobyGames rejected the API key. Check MOBYGAMES_API_KEY in Railway → Variables.' });
+    if (err.status === 429) return res.status(429).json({ error: 'MobyGames rate limit reached. Wait a few seconds and try again.' });
+    res.status(502).json({ error: 'Could not load that game from MobyGames right now.' });
   }
 });
 
@@ -329,7 +394,7 @@ app.get('/api/stats', (req, res) => {
 
 // ---------- Admin-only mutation / management ----------
 app.get('/api/health', requireAdmin, (req, res) => {
-  res.json({ ok: true, dataDir: DATA_DIR, persistent: DATA_DIR === '/data', lookupConfigured: Boolean(RAWG_API_KEY) });
+  res.json({ ok: true, dataDir: DATA_DIR, persistent: DATA_DIR === '/data', lookupConfigured: Boolean(MOBYGAMES_API_KEY) });
 });
 
 app.post('/api/games', requireAdmin, (req, res) => {

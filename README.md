@@ -1,6 +1,15 @@
-# CRITCHELL GAME COLLECTION v1.2
+# CRITCHELL GAME COLLECTION v1.3
 
 A Railway-ready personal game catalogue for physical and digital games.
+
+
+## What changed in v1.3
+- Replaced RAWG lookup with the official **MobyGames API**.
+- Search still uses the same **“Do you mean this one?”** selection flow.
+- MobyGames results can fill title, release date, cover, genres, platforms, description, developer and publisher when those fields are supplied by the API.
+- Railway now uses `MOBYGAMES_API_KEY` instead of `RAWG_API_KEY`.
+- Added MobyGames-required attribution in the interface/footer.
+- Friendly messages are shown for invalid keys and API rate limits.
 
 ## What changed in v1.2
 - **Real admin login**: visitors can browse the collection, but only the logged-in admin can add, edit, delete, import/export or use the game lookup tools.
@@ -21,7 +30,7 @@ A Railway-ready personal game catalogue for physical and digital games.
 - JSON backup export/import.
 - Railway persistent storage support at `/data`.
 - Responsive phone/desktop interface.
-- Automatic metadata lookup using RAWG.
+- Automatic metadata lookup using the official MobyGames API.
 
 ## Railway setup
 
@@ -60,15 +69,15 @@ After adding/changing these variables, redeploy/restart the Railway service.
 
 When configured, the site header says **ADMIN LOGIN**. After a successful login it changes to **ADMIN** and the **+ Add Game** button becomes visible.
 
-### 3. Automatic game search — REQUIRED FOR LOOKUP
-Create a RAWG personal/hobby API key at:
+### 3. Automatic game search — MobyGames
+Get MobyGames API access from:
 
-https://rawg.io/apidocs
+https://www.mobygames.com/api/
 
 Then add this Railway variable:
 
 ```text
-RAWG_API_KEY=your-rawg-key
+MOBYGAMES_API_KEY=your-mobygames-key
 ```
 
 Redeploy/restart the service.
@@ -95,7 +104,7 @@ Public visitors can:
 
 Only a logged-in admin can:
 - Add games.
-- Search RAWG while adding/editing.
+- Search MobyGames while adding/editing.
 - Edit games.
 - Delete games.
 - Import a backup.
@@ -106,7 +115,7 @@ Only a logged-in admin can:
 
 ```bash
 npm install
-ADMIN_USERNAME=Malcolm ADMIN_PASSWORD='your-password' RAWG_API_KEY='your-key' npm start
+ADMIN_USERNAME=Malcolm ADMIN_PASSWORD='your-password' MOBYGAMES_API_KEY='your-key' npm start
 ```
 
 Open http://localhost:3000
@@ -116,7 +125,7 @@ The catalogue itself is stored as `/data/collection.json` when the Railway volum
 
 Log in, open **ADMIN**, then use **Export Backup** to download the complete collection as JSON. Use **Import Backup** to restore it.
 
-Game metadata/artwork lookup is powered by RAWG; attribution is included in the site footer.
+Game metadata/artwork lookup uses the official MobyGames API; the required “Data by MobyGames.com” attribution is included in the site footer.
 
 
 ### Admin login troubleshooting
