@@ -42,3 +42,8 @@
 .lookup-result .choose{display:block;color:var(--cyan);font-weight:800;margin-top:3px;font-size:.72rem;letter-spacing:.02em}
 .lookup-message code{color:white;background:#0b1221;border:1px solid var(--line);border-radius:5px;padding:2px 5px}
 @media(max-width:560px){.admin-session-bar{padding:12px 18px}.lookup-panel-prominent .lookup-heading h3{font-size:19px}}
+
+.lookup-source-row{margin:10px 0}.lookup-source-row label{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.82rem}.lookup-source-row select{max-width:340px}.provider-chip{display:inline-flex;width:max-content;margin-bottom:5px;padding:3px 7px;border:1px solid rgba(102,224,255,.3);border-radius:999px;color:var(--accent);font-size:.66rem;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+@media(max-width:520px){.lookup-source-row label{display:block}.lookup-source-row select{margin-top:6px;max-width:none;width:100%}}
+
+.enrich-progress{margin:0 24px 18px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:#0d1627;color:var(--muted);font-size:12px}.enrich-progress strong{color:white}.enrich-progress progress{width:100%;margin-top:8px;height:10px}

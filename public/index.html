@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=1.3" />
+  <link rel="stylesheet" href="/styles.css?v=1.4" />
 </head>
 <body>
   <div class="bg-grid"></div>
@@ -46,7 +46,12 @@
       <section class="lookup-panel lookup-panel-prominent">
         <div class="lookup-heading">
           <div><span class="eyebrow">STEP 1 · SEARCH THE GAME DATABASE</span><h3>What game are you adding?</h3><p>Type the name, then choose the correct result when I ask “Do you mean this one?”</p></div>
-          <span class="lookup-provider">Powered by <a href="https://www.mobygames.com/" target="_blank" rel="noopener">MobyGames</a></span>
+          <span class="lookup-provider">Sources: IGDB · TheGamesDB · Steam</span>
+        </div>
+        <div class="lookup-source-row">
+          <label>Search source
+            <select id="lookupProvider"><option value="all">Search all available sources</option></select>
+          </label>
         </div>
         <div class="lookup-search-row">
           <input id="lookupQuery" autocomplete="off" placeholder="e.g. Silent Hill 2">
@@ -119,9 +124,12 @@
     <div class="admin-actions">
       <button id="adminAdd" class="primary big-action">+ Add Game</button>
       <a href="/api/export" class="secondary big-action">Export Backup</a>
-      <label class="secondary big-action file-action">Import Backup<input id="importFile" type="file" accept="application/json"></label>
+      <label class="secondary big-action file-action">Import Games (Merge)<input id="mergeImportFile" type="file" accept="application/json"></label>
+      <button id="enrichMissing" class="secondary big-action">Auto-fill Missing Metadata</button>
+      <label class="secondary big-action file-action">Restore Full Backup<input id="importFile" type="file" accept="application/json"></label>
     </div>
     <div id="storageStatus" class="storage-status"></div>
+    <div id="enrichProgress" class="enrich-progress" hidden></div>
     <div class="admin-table-wrap">
       <table class="admin-table">
         <thead><tr><th>Game</th><th>Copies</th><th>Status</th><th></th></tr></thead>
@@ -150,7 +158,7 @@
     </section>
   </template>
 
-  <footer class="site-footer">Game metadata and artwork lookup — Data by <a href="https://www.mobygames.com/" target="_blank" rel="noopener">MobyGames</a>.</footer>
-  <script src="/app.js?v=1.3"></script>
+  <footer class="site-footer">Game lookup can use <a href="https://www.igdb.com/" target="_blank" rel="noopener">IGDB</a>, <a href="https://thegamesdb.net/" target="_blank" rel="noopener">TheGamesDB</a> and the <a href="https://store.steampowered.com/" target="_blank" rel="noopener">Steam</a> catalogue.</footer>
+  <script src="/app.js?v=1.4"></script>
 </body>
 </html>
