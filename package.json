@@ -1,6 +1,6 @@
 {
   "name": "critchell-game-collection",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "private": true,
   "description": "Personal physical and digital video game collection catalogue",
   "main": "server.js",

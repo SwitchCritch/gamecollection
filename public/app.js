@@ -102,13 +102,71 @@ function card(g) {
   </article>`;
 }
 
+function digitalStoreFolders() {
+  const configuredStores = config?.stores || [];
+  const storeGameIds = {};
+  const storeCopyCounts = {};
+
+  configuredStores.forEach(store => {
+    storeGameIds[store] = new Set();
+    storeCopyCounts[store] = 0;
+  });
+
+  games.forEach(g => (g.copies || []).forEach(c => {
+    if (c.type !== 'Digital') return;
+    const store = c.store || 'Other';
+    if (!storeGameIds[store]) storeGameIds[store] = new Set();
+    storeGameIds[store].add(g.id);
+    storeCopyCounts[store] = (storeCopyCounts[store] || 0) + 1;
+  }));
+
+  const preferredOrder = [
+    'Steam', 'GOG', 'Epic Games Store', 'Rockstar Games Launcher', 'EA App',
+    'Ubisoft Connect', 'Microsoft Store / Xbox App', 'Battle.net', 'itch.io',
+    'PlayStation Store', 'Nintendo eShop', 'Xbox Store', 'Amazon Games', 'Other'
+  ];
+  const allStores = [...new Set([...preferredOrder, ...configuredStores, ...Object.keys(storeGameIds)])];
+  const orderedStores = allStores.sort((a, b) => {
+    const ai = preferredOrder.indexOf(a), bi = preferredOrder.indexOf(b);
+    if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    return a.localeCompare(b);
+  });
+
+  const cards = orderedStores.map(store => {
+    const gamesCount = storeGameIds[store]?.size || 0;
+    const copiesCount = storeCopyCounts[store] || 0;
+    const initials = store.split(/\s+/).filter(Boolean).slice(0, 3).map(w => w[0]).join('').toUpperCase();
+    return `<button class="store-folder ${gamesCount ? '' : 'empty-store'}" type="button" data-store="${esc(store)}" aria-label="Open ${esc(store)} collection">
+      <span class="folder-tab"></span>
+      <span class="store-folder-mark">${esc(initials || 'D')}</span>
+      <span class="store-folder-copy"><strong>${esc(store)}</strong><small>${gamesCount} ${gamesCount === 1 ? 'game' : 'games'} · ${copiesCount} ${copiesCount === 1 ? 'copy' : 'copies'}</small></span>
+      <span class="store-folder-arrow">→</span>
+    </button>`;
+  }).join('');
+
+  return `<section class="store-folder-grid">${cards}</section>`;
+}
+
 function homeView() {
   const list = visibleGames();
-  const title = storeFilter ? `${storeFilter} Library` : platformFilter ? platformFilter : view === 'home' ? 'My Game Collection' : ({ digital:'Digital Library', physical:'Physical Collection', backlog:'Backlog', favourites:'Favourites', completed:'Completed Games' }[view] || 'Collection');
+  const isDigitalRoot = view === 'digital' && !storeFilter;
+  const title = storeFilter ? `${storeFilter} Library` : platformFilter ? platformFilter : view === 'home' ? 'My Game Collection' : ({ digital:'Digital Stores & Launchers', physical:'Physical Collection', backlog:'Backlog', favourites:'Favourites', completed:'Completed Games' }[view] || 'Collection');
   const adminAdd = auth.authenticated ? '<button class="primary" id="quickAdd">+ Add Game</button>' : '';
   const digitalBack = view === 'digital' && storeFilter ? '<button class="secondary" id="digitalStoreBack">← All Digital Stores</button>' : '';
   const sectionActions = (digitalBack || adminAdd) ? `<div class="section-actions">${digitalBack}${adminAdd}</div>` : '';
   const emptyText = auth.authenticated ? 'Add your first game or change the current filters.' : 'No games match the current view.';
+  const toolbar = isDigitalRoot ? '' : `<div class="toolbar">
+      <div class="search"><input id="searchBox" value="${esc(search)}" placeholder="Search title, platform, developer, publisher or genre…"></div>
+      <select id="platformSelect" class="filter"><option value="">All platforms</option>${platformOptions(platformFilter, true)}</select>
+      <select id="formatSelect" class="filter"><option value="">Current view</option><option value="home">All games</option><option value="physical">Physical</option><option value="digital">Digital</option><option value="backlog">Backlog</option><option value="completed">Completed</option><option value="favourites">Favourites</option></select>
+    </div>`;
+  const content = isDigitalRoot
+    ? `<div class="digital-folder-intro"><span class="eyebrow">STORES & LAUNCHERS</span><h2>Choose your digital library</h2><p>Select a storefront to see only the games you own there.</p></div>${digitalStoreFolders()}`
+    : (list.length ? `<section class="game-grid">${list.map(card).join('')}</section>` : `<div class="empty"><strong>No games here yet</strong>${emptyText}</div>`);
+  const countText = isDigitalRoot
+    ? `${games.filter(g => g.copies?.some(c => c.type === 'Digital')).length} digital games organised by store`
+    : `${list.length} ${list.length === 1 ? 'game' : 'games'} shown`;
+
   return `<section class="hero hero-with-logo">
       <div class="hero-logo-wrap"><img class="hero-logo" src="/critchell-game-collection-logo.png" alt="Critchell Game Collection"><p>Every physical and digital game in one place — across consoles, PC storefronts, editions and generations.</p></div>
       <button class="hero-card hero-stat-button" type="button" data-stat-view="home" aria-label="Show all owned games"><span>TOTAL OWNED COPIES</span><strong>${stats.copies || 0}</strong><span>across ${stats.platforms || 0} platforms</span></button>
@@ -116,18 +174,14 @@ function homeView() {
     <section class="stats" aria-label="Collection statistics">
       <button class="stat stat-button ${view === 'home' && !platformFilter ? 'active' : ''}" type="button" data-stat-view="home"><strong>${stats.games || 0}</strong><span>Unique Games</span><small>View all games</small></button>
       <button class="stat stat-button ${view === 'physical' ? 'active' : ''}" type="button" data-stat-view="physical"><strong>${stats.physical || 0}</strong><span>Physical</span><small>View physical copies</small></button>
-      <button class="stat stat-button ${view === 'digital' ? 'active' : ''}" type="button" data-stat-view="digital"><strong>${stats.digital || 0}</strong><span>Digital</span><small>View digital games</small></button>
+      <button class="stat stat-button ${view === 'digital' ? 'active' : ''}" type="button" data-stat-view="digital"><strong>${stats.digital || 0}</strong><span>Digital</span><small>Browse stores & launchers</small></button>
       <button class="stat stat-button ${view === 'platforms' ? 'active' : ''}" type="button" data-stat-view="platforms"><strong>${stats.platforms || 0}</strong><span>Platforms</span><small>Browse platforms</small></button>
       <button class="stat stat-button ${view === 'completed' ? 'active' : ''}" type="button" data-stat-view="completed"><strong>${stats.completed || 0}</strong><span>Completed</span><small>View completed games</small></button>
       <button class="stat stat-button ${view === 'favourites' ? 'active' : ''}" type="button" data-stat-view="favourites"><strong>${stats.favourites || 0}</strong><span>Favourites</span><small>View favourites</small></button>
     </section>
-    <div class="toolbar">
-      <div class="search"><input id="searchBox" value="${esc(search)}" placeholder="Search title, platform, developer, publisher or genre…"></div>
-      <select id="platformSelect" class="filter"><option value="">All platforms</option>${platformOptions(platformFilter, true)}</select>
-      <select id="formatSelect" class="filter"><option value="">Current view</option><option value="home">All games</option><option value="physical">Physical</option><option value="digital">Digital</option><option value="backlog">Backlog</option><option value="completed">Completed</option><option value="favourites">Favourites</option></select>
-    </div>
-    <div class="section-head"><div><span class="eyebrow">LIBRARY</span><h2>${esc(title)}</h2><p>${list.length} ${list.length === 1 ? 'game' : 'games'} shown</p></div>${sectionActions}</div>
-    ${list.length ? `<section class="game-grid">${list.map(card).join('')}</section>` : `<div class="empty"><strong>No games here yet</strong>${emptyText}</div>`}`;
+    ${toolbar}
+    <div class="section-head"><div><span class="eyebrow">LIBRARY</span><h2>${esc(title)}</h2><p>${countText}</p></div>${sectionActions}</div>
+    ${content}`;
 }
 
 function digitalStoresView() {
@@ -180,7 +234,7 @@ function platformsView() {
 }
 
 function render() {
-  $('#app').innerHTML = view === 'platforms' ? platformsView() : (view === 'digital' && !storeFilter ? digitalStoresView() : homeView());
+  $('#app').innerHTML = view === 'platforms' ? platformsView() : homeView();
   $$('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   bindPage();
   updateAdminButton();
