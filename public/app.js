@@ -1,0 +1,184 @@
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+let config = null, games = [], stats = {}, view = 'home', platformFilter = '', search = '';
+
+const api = async (url, options={}) => {
+  const res = await fetch(url, {headers:{'Content-Type':'application/json', ...(options.headers||{})}, ...options});
+  if (!res.ok) { const e = await res.json().catch(()=>({error:'Something went wrong'})); throw new Error(e.error || 'Request failed'); }
+  return res.json();
+};
+
+function esc(v=''){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+function yearOf(g){return g.releaseDate ? g.releaseDate.slice(0,4) : ''}
+function copiesText(g){return (g.copies||[]).map(c=>c.platform).join(' · ')}
+function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)}
+
+async function load(){
+  [config,games,stats] = await Promise.all([api('/api/config'),api('/api/games'),api('/api/stats')]);
+  render();
+}
+
+function visibleGames(){
+  let list=[...games];
+  if(view==='digital') list=list.filter(g=>g.copies?.some(c=>c.type==='Digital'));
+  if(view==='physical') list=list.filter(g=>g.copies?.some(c=>c.type==='Physical'));
+  if(view==='backlog') list=list.filter(g=>['Backlog','Unplayed'].includes(g.status));
+  if(view==='favourites') list=list.filter(g=>g.favourite);
+  if(platformFilter) list=list.filter(g=>g.copies?.some(c=>c.platform===platformFilter));
+  if(search){const q=search.toLowerCase();list=list.filter(g=>[g.title,g.developer,g.publisher,(g.genres||[]).join(' '),copiesText(g)].join(' ').toLowerCase().includes(q));}
+  return list;
+}
+
+function card(g){
+  const types=[...new Set((g.copies||[]).map(c=>c.type))];
+  const platforms=[...new Set((g.copies||[]).map(c=>c.platform))];
+  return `<article class="game-card" data-game="${g.id}"><div class="cover">${g.cover?`<img src="${esc(g.cover)}" alt="${esc(g.title)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'cover-fallback',textContent:${JSON.stringify(g.title)}}))">`:`<div class="cover-fallback">${esc(g.title)}</div>`}${g.favourite?'<div class="fav">★</div>':''}</div><div class="game-info"><h3>${esc(g.title)}</h3><div class="game-meta">${esc(platforms.slice(0,2).join(' · '))}${platforms.length>2?` +${platforms.length-2}`:''}${yearOf(g)?`<br>${yearOf(g)}`:''}</div><div class="badges">${types.map(t=>`<span class="badge ${t.toLowerCase()}">${t}</span>`).join('')}<span class="badge">${(g.copies||[]).length} ${(g.copies||[]).length===1?'copy':'copies'}</span></div></div></article>`
+}
+
+function homeView(){
+ const list=visibleGames();
+ const title = platformFilter ? platformFilter : view==='home'?'My Game Collection':({digital:'Digital Library',physical:'Physical Collection',backlog:'Backlog',favourites:'Favourites'}[view]||'Collection');
+ return `<section class="hero"><div><span class="eyebrow">PERSONAL GAMING ARCHIVE</span><h1>CRITCHELL <span>GAME COLLECTION</span></h1><p>Every physical and digital game in one place — across consoles, PC storefronts, editions and generations.</p></div><div class="hero-card"><span>TOTAL OWNED COPIES</span><strong>${stats.copies||0}</strong><span>across ${stats.platforms||0} platforms</span></div></section>
+ <section class="stats"><div class="stat"><strong>${stats.games||0}</strong><span>Unique Games</span></div><div class="stat"><strong>${stats.physical||0}</strong><span>Physical</span></div><div class="stat"><strong>${stats.digital||0}</strong><span>Digital</span></div><div class="stat"><strong>${stats.platforms||0}</strong><span>Platforms</span></div><div class="stat"><strong>${stats.completed||0}</strong><span>Completed</span></div><div class="stat"><strong>${stats.favourites||0}</strong><span>Favourites</span></div></section>
+ <div class="toolbar"><div class="search"><input id="searchBox" value="${esc(search)}" placeholder="Search title, platform, developer, publisher or genre…"></div><select id="platformSelect" class="filter"><option value="">All platforms</option>${platformOptions(platformFilter,true)}</select><select id="formatSelect" class="filter"><option value="">Current view</option><option value="home">All games</option><option value="physical">Physical</option><option value="digital">Digital</option><option value="backlog">Backlog</option><option value="favourites">Favourites</option></select></div>
+ <div class="section-head"><div><span class="eyebrow">LIBRARY</span><h2>${esc(title)}</h2><p>${list.length} ${list.length===1?'game':'games'} shown</p></div><button class="primary" id="quickAdd">+ Add Game</button></div>
+ ${list.length?`<section class="game-grid">${list.map(card).join('')}</section>`:`<div class="empty"><strong>No games here yet</strong>Add your first game or change the current filters.</div>`}`;
+}
+
+function platformsView(){
+ const counts={};games.forEach(g=>(g.copies||[]).forEach(c=>counts[c.platform]=(counts[c.platform]||0)+1));
+ const cards=Object.entries(counts).sort((a,b)=>a[0].localeCompare(b[0])).map(([p,n])=>`<div class="platform-card" data-platform="${esc(p)}"><strong>${esc(p)}</strong><span>${n}</span></div>`).join('');
+ return `<section class="hero"><div><span class="eyebrow">BROWSE BY SYSTEM</span><h1>YOUR <span>PLATFORMS</span></h1><p>Select a console or computer platform to see every copy you own for that system.</p></div></section><div class="section-head"><div><h2>${Object.keys(counts).length} platforms in your collection</h2></div></div>${cards?`<section class="platform-grid">${cards}</section>`:`<div class="empty"><strong>No platforms yet</strong>They'll appear automatically when you add games.</div>`}`;
+}
+
+function render(){
+ $('#app').innerHTML = view==='platforms' ? platformsView() : homeView();
+ $$('[data-view]').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
+ bindPage();
+}
+
+function bindPage(){
+ $('#searchBox')?.addEventListener('input',e=>{search=e.target.value;render()});
+ $('#platformSelect')?.addEventListener('change',e=>{platformFilter=e.target.value;render()});
+ $('#formatSelect')?.addEventListener('change',e=>{if(e.target.value){view=e.target.value;platformFilter='';render()}});
+ $('#quickAdd')?.addEventListener('click',()=>openForm());
+ $$('[data-game]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.game)));
+ $$('[data-platform]').forEach(el=>el.addEventListener('click',()=>{platformFilter=el.dataset.platform;view='home';render()}));
+}
+
+$$('[data-view]').forEach(btn=>btn.addEventListener('click',()=>{view=btn.dataset.view;platformFilter='';search='';render()}));
+$('#adminBtn').addEventListener('click',openAdmin);
+$$('[data-close]').forEach(btn=>btn.addEventListener('click',()=>btn.closest('dialog').close()));
+
+function platformOptions(selected='', grouped=false){
+ let html='';
+ for(const [group,items] of Object.entries(config.platformGroups||{})){
+   const opts=items.map(p=>`<option ${p===selected?'selected':''}>${esc(p)}</option>`).join('');
+   html += grouped?`<optgroup label="${esc(group)}">${opts}</optgroup>`:opts;
+ }
+ return html;
+}
+function storeOptions(selected=''){return (config.stores||[]).map(s=>`<option ${s===selected?'selected':''}>${esc(s)}</option>`).join('')}
+
+function addCopy(copy={}){
+ const node=$('#copyTemplate').content.cloneNode(true); const card=node.querySelector('.copy-card');
+ card.querySelector('.copy-platform').innerHTML='<option value="">Select platform…</option>'+platformOptions(copy.platform);
+ card.querySelector('.copy-store').innerHTML='<option value="">Select store…</option>'+storeOptions(copy.store);
+ card.querySelector('.copy-type').value=copy.type||'Physical';
+ card.querySelector('.copy-edition').value=copy.edition||'Standard';card.querySelector('.copy-region').value=copy.region||'';card.querySelector('.copy-notes').value=copy.notes||'';
+ card.querySelector('.copy-box').checked=!!copy.box;card.querySelector('.copy-manual').checked=!!copy.manual;card.querySelector('.copy-media').checked=copy.media!==false;card.querySelector('.copy-steelbook').checked=!!copy.steelbook;
+ const sync=()=>{const d=card.querySelector('.copy-type').value==='Digital';card.querySelector('.store-field').style.opacity=d?1:.35;card.querySelector('.copy-store').disabled=!d;card.querySelector('.physical-options').style.display=d?'none':'flex'};
+ card.querySelector('.copy-type').addEventListener('change',sync);card.querySelector('.remove-copy').addEventListener('click',()=>{card.remove();if(!$('#copies').children.length)addCopy()});sync();$('#copies').appendChild(node);
+}
+
+
+function lookupResultCard(g){
+ const platforms=(g.platforms||[]).slice(0,5).join(' · ');
+ return `<button type="button" class="lookup-result" data-lookup-id="${esc(g.id)}"><div>${g.cover?`<img src="${esc(g.cover)}" alt="" loading="lazy">`:`<div class="lookup-cover-fallback">NO COVER</div>`}</div><div><strong>${esc(g.title)}</strong><small>${esc(g.year||'Release date unknown')}${g.genres?.length?' · '+esc(g.genres.slice(0,2).join(', ')):''}</small><small>${esc(platforms||'Platform information unavailable')}${(g.platforms||[]).length>5?' …':''}</small><small class="choose">Do you mean this one? →</small></div></button>`;
+}
+
+async function searchGameLookup(){
+ const q=$('#lookupQuery').value.trim();
+ if(!q){$('#lookupMessage').textContent='Type a game title first.';$('#lookupMessage').classList.add('error');return}
+ $('#lookupBtn').disabled=true;$('#lookupResults').innerHTML='<div class="lookup-loading">Searching game database…</div>';$('#lookupMessage').textContent=`Looking for “${q}”…`;$('#lookupMessage').classList.remove('error');
+ try{
+   const data=await api('/api/lookup/search?q='+encodeURIComponent(q));
+   const results=data.results||[];
+   $('#lookupMessage').textContent=results.length?`I found ${results.length} possible ${results.length===1?'match':'matches'}. Which one do you mean?`:'No matches found. Try a slightly different title or enter the details manually.';
+   $('#lookupResults').innerHTML=results.map(lookupResultCard).join('');
+   $$('#lookupResults [data-lookup-id]').forEach(btn=>btn.addEventListener('click',()=>selectLookupGame(btn.dataset.lookupId)));
+ }catch(err){
+   $('#lookupResults').innerHTML='';$('#lookupMessage').textContent=err.message;$('#lookupMessage').classList.add('error');
+ }finally{$('#lookupBtn').disabled=false}
+}
+
+async function selectLookupGame(id){
+ $('#lookupMessage').textContent='Loading full game details…';$('#lookupMessage').classList.remove('error');
+ try{
+   const g=await api('/api/lookup/game/'+encodeURIComponent(id));
+   $('#title').value=g.title||'';$('#releaseDate').value=g.releaseDate||'';$('#developer').value=g.developer||'';$('#publisher').value=g.publisher||'';$('#genres').value=(g.genres||[]).join(', ');$('#cover').value=g.cover||'';$('#description').value=g.description||'';
+   $('#sourceProvider').value=g.source?.provider||'RAWG';$('#sourceId').value=g.source?.id||String(id);$('#sourceUrl').value=g.source?.url||'';
+   $('#lookupQuery').value=g.title||$('#lookupQuery').value;
+   $('#lookupResults').innerHTML='';$('#lookupMessage').innerHTML=`✓ Selected <strong>${esc(g.title)}</strong>. Details filled in automatically. Now choose which version you own below.`;
+   const platform=g.platforms?.[0];
+   if(platform) suggestPlatformForCopy(g.platforms);
+ }catch(err){$('#lookupMessage').textContent=err.message;$('#lookupMessage').classList.add('error')}
+}
+
+function normalizedPlatformMatch(raw=''){
+ const n=raw.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+ const aliases={
+   'pc':'Windows PC','playstation':'PlayStation','playstation 2':'PlayStation 2','playstation 3':'PlayStation 3','playstation 4':'PlayStation 4','playstation 5':'PlayStation 5',
+   'psp':'PSP','ps vita':'PlayStation Vita','xbox':'Xbox','xbox 360':'Xbox 360','xbox one':'Xbox One','xbox series s x':'Xbox Series X/S','xbox series x s':'Xbox Series X/S',
+   'nintendo switch':'Nintendo Switch','nintendo switch 2':'Nintendo Switch 2','wii':'Nintendo Wii','wii u':'Nintendo Wii U','gamecube':'Nintendo GameCube','nintendo 64':'Nintendo 64',
+   'game boy':'Game Boy','game boy color':'Game Boy Color','game boy advance':'Game Boy Advance','nintendo ds':'Nintendo DS','nintendo 3ds':'Nintendo 3DS',
+   'dreamcast':'Dreamcast','sega saturn':'Saturn','genesis':'Mega Drive / Genesis','sega genesis':'Mega Drive / Genesis'
+ };
+ return aliases[n]||'';
+}
+
+function suggestPlatformForCopy(platforms=[]){
+ const select=$('#copies .copy-platform');
+ if(!select||select.value)return;
+ for(const p of platforms){const mapped=normalizedPlatformMatch(p);if(mapped&&[...select.options].some(o=>o.value===mapped)){select.value=mapped;break}}
+}
+
+$('#lookupBtn').addEventListener('click',searchGameLookup);
+$('#lookupQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchGameLookup()}});
+
+function openForm(game=null){
+ $('#formTitle').textContent=game?'Edit game':'Add game';$('#gameId').value=game?.id||'';$('#title').value=game?.title||'';$('#releaseDate').value=game?.releaseDate||'';$('#developer').value=game?.developer||'';$('#publisher').value=game?.publisher||'';$('#genres').value=(game?.genres||[]).join(', ');$('#cover').value=game?.cover||'';$('#rating').value=game?.rating||'';$('#favourite').checked=!!game?.favourite;$('#description').value=game?.description||'';$('#notes').value=game?.notes||'';
+ $('#sourceProvider').value=game?.source?.provider||'';$('#sourceId').value=game?.source?.id||'';$('#sourceUrl').value=game?.source?.url||'';
+ $('#lookupQuery').value=game?.title||'';$('#lookupResults').innerHTML='';$('#lookupMessage').textContent=game?.source?.provider?`Metadata linked to ${game.source.provider}. Search again to replace it.`:'Search above to fill these details automatically, or enter them manually.';$('#lookupMessage').classList.remove('error');
+ $('#status').innerHTML=(config.statuses||[]).map(s=>`<option ${s===(game?.status||'Backlog')?'selected':''}>${esc(s)}</option>`).join('');
+ $('#copies').innerHTML='';(game?.copies?.length?game.copies:[{}]).forEach(addCopy);$('#gameDialog').showModal();
+}
+$('#addCopyBtn').addEventListener('click',()=>addCopy());
+$('#gameForm').addEventListener('submit',async e=>{
+ e.preventDefault();
+ try{
+  const copies=$$('#copies .copy-card').map(card=>({platform:card.querySelector('.copy-platform').value,type:card.querySelector('.copy-type').value,store:card.querySelector('.copy-store').value,edition:card.querySelector('.copy-edition').value,region:card.querySelector('.copy-region').value,notes:card.querySelector('.copy-notes').value,box:card.querySelector('.copy-box').checked,manual:card.querySelector('.copy-manual').checked,media:card.querySelector('.copy-media').checked,steelbook:card.querySelector('.copy-steelbook').checked}));
+  const source=$('#sourceProvider').value?{provider:$('#sourceProvider').value,id:$('#sourceId').value,url:$('#sourceUrl').value}:null;
+  const body={title:$('#title').value,releaseDate:$('#releaseDate').value,developer:$('#developer').value,publisher:$('#publisher').value,genres:$('#genres').value,cover:$('#cover').value,rating:$('#rating').value,favourite:$('#favourite').checked,description:$('#description').value,notes:$('#notes').value,status:$('#status').value,copies,source};
+  const id=$('#gameId').value;await api(id?`/api/games/${id}`:'/api/games',{method:id?'PUT':'POST',body:JSON.stringify(body)});$('#gameDialog').close();toast(id?'Game updated':'Game added');await load();
+ }catch(err){alert(err.message)}
+});
+
+function openDetail(id){
+ const g=games.find(x=>x.id===id);if(!g)return;
+ const copies=(g.copies||[]).map(c=>`<div class="owned-copy"><strong>${esc(c.platform)} · ${esc(c.type)}</strong><span class="badge ${c.type.toLowerCase()}">${esc(c.type)}</span>${c.store?` <span class="badge">${esc(c.store)}</span>`:''}${c.edition?` <span class="badge">${esc(c.edition)}</span>`:''}${c.region?` <span class="badge">${esc(c.region)}</span>`:''}<div class="game-meta">${c.notes?esc(c.notes):''}</div></div>`).join('');
+ $('#detailDialog').innerHTML=`<div class="modal-head"><div><span class="eyebrow">GAME DETAILS</span></div><button class="icon-btn" onclick="document.getElementById('detailDialog').close()">×</button></div><div class="detail"><div class="detail-cover">${g.cover?`<img src="${esc(g.cover)}" alt="${esc(g.title)}">`:`<div class="cover-fallback">${esc(g.title)}</div>`}</div><div class="detail-body"><span class="eyebrow">${g.favourite?'★ FAVOURITE':'IN COLLECTION'}</span><h2>${esc(g.title)}</h2><div class="badges"><span class="badge">${esc(g.status)}</span>${g.rating?`<span class="badge">${g.rating}/10</span>`:''}${(g.genres||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join('')}</div><div class="detail-facts"><div class="fact"><small>Developer</small>${esc(g.developer||'—')}</div><div class="fact"><small>Publisher</small>${esc(g.publisher||'—')}</div><div class="fact"><small>Release</small>${esc(g.releaseDate||'—')}</div><div class="fact"><small>Owned copies</small>${g.copies?.length||0}</div></div>${g.description?`<p class="detail-desc">${esc(g.description)}</p>`:''}<span class="eyebrow">IN MY COLLECTION</span>${copies}${g.notes?`<p class="detail-desc"><strong>Notes:</strong><br>${esc(g.notes)}</p>`:''}</div></div>`;
+ $('#detailDialog').showModal();
+}
+
+async function openAdmin(){
+ const health=await api('/api/health');$('#storageStatus').innerHTML=health.persistent?'✓ Persistent Railway storage detected at <strong>/data</strong>. Your collection will survive redeploys.':'⚠ Running with local project storage. On Railway, mount a Volume at <strong>/data</strong> for persistence.';
+ $('#adminRows').innerHTML=games.map(g=>`<tr><td><strong>${esc(g.title)}</strong><div class="game-meta">${esc(copiesText(g))}</div></td><td>${g.copies?.length||0}</td><td>${esc(g.status)}</td><td><div class="row-actions"><button class="tiny edit-game" data-id="${g.id}">Edit</button><button class="tiny danger delete-game" data-id="${g.id}">Delete</button></div></td></tr>`).join('')||'<tr><td colspan="4">No games added yet.</td></tr>';
+ $$('.edit-game').forEach(b=>b.addEventListener('click',()=>{$('#adminDialog').close();openForm(games.find(g=>g.id===b.dataset.id))}));
+ $$('.delete-game').forEach(b=>b.addEventListener('click',async()=>{const g=games.find(x=>x.id===b.dataset.id);if(confirm(`Delete ${g.title}?`)){await api('/api/games/'+b.dataset.id,{method:'DELETE'});toast('Game deleted');await load();openAdmin()}}));
+ $('#adminDialog').showModal();
+}
+$('#adminAdd').addEventListener('click',()=>{$('#adminDialog').close();openForm()});
+$('#importFile').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const data=JSON.parse(await file.text());if(!confirm(`Import this backup? It contains ${data.games?.length||0} games and will replace the current collection.`))return;await api('/api/import',{method:'POST',body:JSON.stringify(data)});toast('Backup imported');$('#adminDialog').close();await load()}catch(err){alert('Could not import backup: '+err.message)}e.target.value=''});
+
+load().catch(err=>{$('#app').innerHTML=`<div class="empty"><strong>Could not load collection</strong>${esc(err.message)}</div>`});
