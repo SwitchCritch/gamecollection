@@ -287,9 +287,10 @@ function addCopy(copy = {}) {
 
 function lookupResultCard(g) {
   const platforms = (g.platforms || []).slice(0, 5).join(' · ');
-  return `<button type="button" class="lookup-result" data-lookup-id="${esc(g.id)}">
-    <div>${g.cover ? `<img src="${esc(g.cover)}" alt="" loading="lazy">` : '<div class="lookup-cover-fallback">NO COVER</div>'}</div>
+  return `<button type="button" class="lookup-result" data-lookup-id="${esc(g.id)}" data-lookup-provider="${esc(String(g.provider || '').toLowerCase())}">
+    <div>${g.cover ? `<img src="${esc(g.cover)}" alt="" loading="lazy" onerror="this.style.display='none'">` : '<div class="lookup-cover-fallback">NO COVER</div>'}</div>
     <div>
+      <span class="provider-chip">${esc(g.provider || 'Game database')}</span>
       <strong>${esc(g.title)}</strong>
       <small>${esc(g.year || 'Release date unknown')}${g.genres?.length ? ' · ' + esc(g.genres.slice(0, 2).join(', ')) : ''}</small>
       <small>${esc(platforms || 'Platform information unavailable')}${(g.platforms || []).length > 5 ? ' …' : ''}</small>
@@ -303,15 +304,19 @@ async function updateLookupStatus(game = null) {
   $('#lookupResults').innerHTML = '';
   try {
     const state = await api('/api/lookup/status');
+    const providers = state.providers || [];
+    const select = $('#lookupProvider');
+    select.innerHTML = '<option value="all">Search all available sources</option>' + providers.map(p => `<option value="${esc(p.id)}" ${p.configured ? '' : 'disabled'}>${esc(p.name)}${p.configured ? '' : ' — not configured'}</option>`).join('');
+    const ready = providers.filter(p => p.configured).map(p => p.name);
     if (state.configured) {
       $('#lookupMessage').classList.remove('error');
       $('#lookupMessage').innerHTML = game?.source?.provider
-        ? `Currently linked to <strong>${esc(game.source.provider)}</strong>. Search above to choose a different match.`
-        : '<strong>Automatic lookup is ready.</strong> Type a game name above and press Search games.';
+        ? `Currently linked to <strong>${esc(game.source.provider)}</strong>. Available lookup sources: <strong>${esc(ready.join(', '))}</strong>.`
+        : `<strong>Automatic lookup is ready.</strong> Searching: ${esc(ready.join(', '))}.`;
       $('#lookupBtn').disabled = false;
     } else {
       $('#lookupMessage').classList.add('error');
-      $('#lookupMessage').innerHTML = '<strong>Automatic lookup is not configured yet.</strong> Add <code>MOBYGAMES_API_KEY</code> in Railway → Variables, then redeploy. Manual entry still works.';
+      $('#lookupMessage').innerHTML = '<strong>No lookup source is configured yet.</strong> Add IGDB, TheGamesDB or Steam credentials in Railway → Variables. Manual entry still works.';
       $('#lookupBtn').disabled = true;
     }
   } catch (err) {
@@ -323,23 +328,24 @@ async function updateLookupStatus(game = null) {
 
 async function searchGameLookup() {
   const q = $('#lookupQuery').value.trim();
+  const provider = $('#lookupProvider').value || 'all';
   if (!q) {
     $('#lookupMessage').textContent = 'Type a game title first.';
     $('#lookupMessage').classList.add('error');
     return;
   }
   $('#lookupBtn').disabled = true;
-  $('#lookupResults').innerHTML = '<div class="lookup-loading">Searching the game database…</div>';
+  $('#lookupResults').innerHTML = '<div class="lookup-loading">Searching game databases…</div>';
   $('#lookupMessage').textContent = `Looking for “${q}”…`;
   $('#lookupMessage').classList.remove('error');
   try {
-    const data = await api('/api/lookup/search?q=' + encodeURIComponent(q));
+    const data = await api('/api/lookup/search?q=' + encodeURIComponent(q) + '&provider=' + encodeURIComponent(provider));
     const results = data.results || [];
     $('#lookupMessage').innerHTML = results.length
-      ? `<strong>I found ${results.length} possible ${results.length === 1 ? 'match' : 'matches'}.</strong> Do you mean one of these?`
-      : 'No matches found. Try a slightly different title or enter the details manually.';
+      ? `<strong>I found ${results.length} possible ${results.length === 1 ? 'match' : 'matches'}.</strong> Do you mean one of these?${data.errors?.length ? ' <small>One source was temporarily unavailable.</small>' : ''}`
+      : 'No matches found. Try a slightly different title, another source, or enter the details manually.';
     $('#lookupResults').innerHTML = results.map(lookupResultCard).join('');
-    $$('#lookupResults [data-lookup-id]').forEach(btn => btn.addEventListener('click', () => selectLookupGame(btn.dataset.lookupId)));
+    $$('#lookupResults [data-lookup-id]').forEach(btn => btn.addEventListener('click', () => selectLookupGame(btn.dataset.lookupProvider, btn.dataset.lookupId)));
   } catch (err) {
     $('#lookupResults').innerHTML = '';
     $('#lookupMessage').textContent = err.message;
@@ -354,11 +360,11 @@ async function searchGameLookup() {
   }
 }
 
-async function selectLookupGame(id) {
+async function selectLookupGame(provider, id) {
   $('#lookupMessage').textContent = 'Loading the full game details…';
   $('#lookupMessage').classList.remove('error');
   try {
-    const g = await api('/api/lookup/game/' + encodeURIComponent(id));
+    const g = await api('/api/lookup/game/' + encodeURIComponent(provider) + '/' + encodeURIComponent(id));
     $('#title').value = g.title || '';
     $('#releaseDate').value = g.releaseDate || '';
     $('#developer').value = g.developer || '';
@@ -366,16 +372,34 @@ async function selectLookupGame(id) {
     $('#genres').value = (g.genres || []).join(', ');
     $('#cover').value = g.cover || '';
     $('#description').value = g.description || '';
-    $('#sourceProvider').value = g.source?.provider || 'MobyGames';
+    $('#sourceProvider').value = g.source?.provider || provider;
     $('#sourceId').value = g.source?.id || String(id);
     $('#sourceUrl').value = g.source?.url || '';
     $('#lookupQuery').value = g.title || $('#lookupQuery').value;
     $('#lookupResults').innerHTML = '';
-    $('#lookupMessage').innerHTML = `✓ <strong>${esc(g.title)}</strong> selected. I filled in the game information below. Now choose the platform and whether your copy is physical or digital.`;
+    $('#lookupMessage').innerHTML = `✓ <strong>${esc(g.title)}</strong> selected from <strong>${esc(g.source?.provider || provider)}</strong>. I filled in the available information below.`;
     suggestPlatformForCopy(g.platforms || []);
+    if (g.suggestedCopy) applySuggestedCopy(g.suggestedCopy);
   } catch (err) {
     $('#lookupMessage').textContent = err.message;
     $('#lookupMessage').classList.add('error');
+  }
+}
+
+function applySuggestedCopy(copy = {}) {
+  const card = $('#copies .copy-card');
+  if (!card) return;
+  if (copy.platform) {
+    const sel = card.querySelector('.copy-platform');
+    if ([...sel.options].some(o => o.value === copy.platform)) sel.value = copy.platform;
+  }
+  if (copy.type) {
+    card.querySelector('.copy-type').value = copy.type;
+    card.querySelector('.copy-type').dispatchEvent(new Event('change'));
+  }
+  if (copy.store) {
+    const sel = card.querySelector('.copy-store');
+    if ([...sel.options].some(o => o.value === copy.store)) sel.value = copy.store;
   }
 }
 
@@ -507,7 +531,7 @@ async function openAdmin() {
     }
     const health = await api('/api/health');
     $('#adminSessionText').textContent = `Logged in as ${auth.username}`;
-    $('#storageStatus').innerHTML = `${health.persistent ? '✓ Persistent Railway storage detected at <strong>/data</strong>. Your collection and admin login survive redeploys.' : '⚠ Running with local project storage. On Railway, mount a Volume at <strong>/data</strong> for persistence.'}<br>${health.lookupConfigured ? '✓ Automatic MobyGames game lookup is configured.' : '⚠ Automatic lookup is OFF. Add <strong>MOBYGAMES_API_KEY</strong> in Railway → Variables.'}`;
+    $('#storageStatus').innerHTML = `${health.persistent ? '✓ Persistent Railway storage detected at <strong>/data</strong>. Your collection and admin login survive redeploys.' : '⚠ Running with local project storage. On Railway, mount a Volume at <strong>/data</strong> for persistence.'}<br>${health.lookupConfigured ? '✓ Game lookup is configured: <strong>' + (health.lookupProviders || []).filter(p => p.configured).map(p => p.name).join(', ') + '</strong>.' : '⚠ Automatic lookup is OFF. Configure IGDB, TheGamesDB or Steam credentials in Railway → Variables.'}`;
     $('#adminRows').innerHTML = games.map(g => `<tr><td><strong>${esc(g.title)}</strong><div class="game-meta">${esc(copiesText(g))}</div></td><td>${g.copies?.length || 0}</td><td>${esc(g.status)}</td><td><div class="row-actions"><button class="tiny edit-game" data-id="${g.id}">Edit</button><button class="tiny danger delete-game" data-id="${g.id}">Delete</button></div></td></tr>`).join('') || '<tr><td colspan="4">No games added yet.</td></tr>';
     $$('.edit-game').forEach(b => b.addEventListener('click', () => { $('#adminDialog').close(); openForm(games.find(g => g.id === b.dataset.id)); }));
     $$('.delete-game').forEach(b => b.addEventListener('click', async () => {

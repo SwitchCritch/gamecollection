@@ -9,8 +9,12 @@ app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || (fs.existsSync('/data') ? '/data' : path.join(__dirname, 'data'));
 const DATA_FILE = path.join(DATA_DIR, 'collection.json');
-const MOBYGAMES_API_KEY = process.env.MOBYGAMES_API_KEY || '';
-const MOBYGAMES_BASE = 'https://api.mobygames.com/v1';
+const IGDB_CLIENT_ID = String(process.env.IGDB_CLIENT_ID || '').trim();
+const IGDB_CLIENT_SECRET = String(process.env.IGDB_CLIENT_SECRET || '').trim();
+const THEGAMESDB_API_KEY = String(process.env.THEGAMESDB_API_KEY || '').trim();
+const STEAM_WEB_API_KEY = String(process.env.STEAM_WEB_API_KEY || '').trim();
+const IGDB_BASE = 'https://api.igdb.com/v4';
+const THEGAMESDB_BASE = 'https://api.thegamesdb.net';
 const COOKIE_NAME = 'cgc_admin';
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const ADMIN_USERNAME = String(process.env.ADMIN_USERNAME || '').trim();
@@ -234,130 +238,188 @@ function cleanLookupText(value = '') {
     .trim();
 }
 
-function mobyPlatformNames(game = {}) {
-  return (game.platforms || []).map(p => p?.platform_name || p?.name).filter(Boolean);
+function lookupProviders() {
+  return [
+    { id: 'igdb', name: 'IGDB', configured: Boolean(IGDB_CLIENT_ID && IGDB_CLIENT_SECRET), note: 'Best all-round source for PC and console games' },
+    { id: 'thegamesdb', name: 'TheGamesDB', configured: Boolean(THEGAMESDB_API_KEY), note: 'Excellent for console and retro metadata/artwork' },
+    { id: 'steam', name: 'Steam', configured: Boolean(STEAM_WEB_API_KEY), note: 'Official Steam catalogue search' }
+  ];
 }
 
-function mobyGenreNames(game = {}) {
-  return (game.genres || []).map(g => g?.genre_name || g?.name).filter(Boolean);
+function lookupConfigured() {
+  return lookupProviders().some(p => p.configured);
 }
 
-function mobyCompanyNames(value) {
-  if (!value) return [];
-  const list = Array.isArray(value) ? value : [value];
-  return list.map(x => {
-    if (typeof x === 'string') return x;
-    return x?.developer_name || x?.publisher_name || x?.company_name || x?.name || '';
-  }).filter(Boolean);
+function normaliseSearchText(v='') {
+  return String(v).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-function mobyCover(game = {}) {
-  return game.sample_cover?.image || game.sample_cover?.thumbnail_image || '';
+function searchScore(title, q) {
+  const t = normaliseSearchText(title), n = normaliseSearchText(q);
+  if (t === n) return 1000;
+  if (t.startsWith(n)) return 700 - Math.min(200, t.length - n.length);
+  if (t.includes(n)) return 500 - Math.min(200, t.indexOf(n));
+  const parts = n.split(' ').filter(Boolean);
+  return parts.reduce((score, part) => score + (t.includes(part) ? 40 : 0), 0);
 }
 
-function mobyReleaseDate(game = {}) {
-  const dates = (game.platforms || []).map(p => p?.first_release_date).filter(Boolean).sort();
-  return dates[0] || game.release_date || '';
+// ----- IGDB -----
+let igdbTokenCache = { token: '', expiresAt: 0 };
+async function getIgdbToken() {
+  if (!IGDB_CLIENT_ID || !IGDB_CLIENT_SECRET) throw Object.assign(new Error('IGDB is not configured'), { status: 503 });
+  if (igdbTokenCache.token && Date.now() < igdbTokenCache.expiresAt - 60000) return igdbTokenCache.token;
+  const url = new URL('https://id.twitch.tv/oauth2/token');
+  url.searchParams.set('client_id', IGDB_CLIENT_ID);
+  url.searchParams.set('client_secret', IGDB_CLIENT_SECRET);
+  url.searchParams.set('grant_type', 'client_credentials');
+  const response = await fetch(url, { method: 'POST', headers: { 'Accept': 'application/json' } });
+  if (!response.ok) throw Object.assign(new Error(`IGDB authentication returned ${response.status}`), { status: response.status });
+  const data = await response.json();
+  igdbTokenCache = { token: data.access_token || '', expiresAt: Date.now() + Math.max(300, Number(data.expires_in || 3600)) * 1000 };
+  return igdbTokenCache.token;
 }
 
-function mapMobySearchResult(game = {}) {
-  const releaseDate = mobyReleaseDate(game);
-  return {
-    id: game.game_id ?? game.id,
-    title: game.title || '',
-    releaseDate,
-    year: releaseDate ? String(releaseDate).slice(0, 4) : '',
-    cover: mobyCover(game),
-    platforms: mobyPlatformNames(game),
-    genres: mobyGenreNames(game),
-    score: game.moby_score ?? null,
-    sourceUrl: game.moby_url || ''
-  };
-}
-
-async function mobyFetch(pathname, params = {}) {
-  const url = new URL(`${MOBYGAMES_BASE}${pathname}`);
-  url.searchParams.set('api_key', MOBYGAMES_API_KEY);
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
-  }
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'CritchellGameCollection/1.3',
-      'Accept': 'application/json'
-    }
+async function igdbFetch(endpoint, body) {
+  const token = await getIgdbToken();
+  const response = await fetch(`${IGDB_BASE}/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Client-ID': IGDB_CLIENT_ID, 'Authorization': `Bearer ${token}`, 'Accept': 'application/json', 'Content-Type': 'text/plain' },
+    body
   });
-  if (!response.ok) {
-    let detail = '';
-    try {
-      const body = await response.json();
-      detail = body?.message || body?.error || '';
-    } catch {}
-    const err = new Error(`MobyGames returned ${response.status}${detail ? `: ${detail}` : ''}`);
-    err.status = response.status;
-    throw err;
-  }
+  if (!response.ok) throw Object.assign(new Error(`IGDB returned ${response.status}`), { status: response.status });
   return response.json();
 }
 
-// Lookup is admin-only because it feeds the Add/Edit form.
-app.get('/api/lookup/status', requireAdmin, (req, res) => {
-  res.json({
-    provider: 'MobyGames',
-    configured: Boolean(MOBYGAMES_API_KEY),
-    attributionUrl: 'https://www.mobygames.com/'
+function igdbCover(g={}) {
+  return g.cover?.image_id ? `https://images.igdb.com/igdb/image/upload/t_cover_big_2x/${g.cover.image_id}.jpg` : '';
+}
+function isoFromUnix(ts) { return ts ? new Date(Number(ts) * 1000).toISOString().slice(0,10) : ''; }
+function mapIgdbResult(g={}) {
+  const releaseDate = isoFromUnix(g.first_release_date);
+  return { provider:'IGDB', id:String(g.id||''), title:g.name||'', releaseDate, year:releaseDate.slice(0,4), cover:igdbCover(g), platforms:(g.platforms||[]).map(x=>x.name).filter(Boolean), genres:(g.genres||[]).map(x=>x.name).filter(Boolean), sourceUrl:g.url||'' };
+}
+async function searchIgdb(q) {
+  const safe = String(q).replace(/\\/g,'\\\\').replace(/"/g,'\\"');
+  const fields = 'name,first_release_date,url,cover.image_id,genres.name,platforms.name';
+  const rows = await igdbFetch('games', `search "${safe}"; fields ${fields}; where version_parent = null; limit 12;`);
+  return rows.map(mapIgdbResult);
+}
+async function detailIgdb(id) {
+  const fields = 'name,summary,storyline,first_release_date,url,cover.image_id,genres.name,platforms.name,involved_companies.company.name,involved_companies.developer,involved_companies.publisher';
+  const rows = await igdbFetch('games', `fields ${fields}; where id = ${Number(id)||0}; limit 1;`);
+  const g = rows[0]; if (!g) throw Object.assign(new Error('Game not found in IGDB'), { status:404 });
+  const companies=g.involved_companies||[];
+  return { id:String(g.id), title:g.name||'', releaseDate:isoFromUnix(g.first_release_date), cover:igdbCover(g), developer:companies.filter(x=>x.developer).map(x=>x.company?.name).filter(Boolean).join(', '), publisher:companies.filter(x=>x.publisher).map(x=>x.company?.name).filter(Boolean).join(', '), genres:(g.genres||[]).map(x=>x.name).filter(Boolean), description:cleanLookupText(g.summary||g.storyline||''), platforms:(g.platforms||[]).map(x=>x.name).filter(Boolean), source:{provider:'IGDB',id:String(g.id),url:g.url||'https://www.igdb.com/'} };
+}
+
+// ----- TheGamesDB -----
+const tgdbReferenceCache = new Map();
+async function tgdbFetch(pathname, params={}) {
+  const url = new URL(`${THEGAMESDB_BASE}${pathname}`);
+  url.searchParams.set('apikey', THEGAMESDB_API_KEY);
+  for (const [k,v] of Object.entries(params)) if (v!==undefined && v!==null && v!=='') url.searchParams.set(k,String(v));
+  const response = await fetch(url, { headers:{'Accept':'application/json','User-Agent':'CritchellGameCollection/1.4'} });
+  if (!response.ok) throw Object.assign(new Error(`TheGamesDB returned ${response.status}`), { status:response.status });
+  return response.json();
+}
+function tgdbBoxart(data, id) {
+  const box=data?.include?.boxart; const items=box?.data?.[String(id)]||box?.data?.[id]||[];
+  const art=items.find(x=>x.type==='boxart' && x.side==='front') || items.find(x=>x.type==='boxart') || items[0];
+  const base=box?.base_url?.large || box?.base_url?.original || box?.base_url?.medium || '';
+  if (!art?.filename) return '';
+  return /^https?:/i.test(art.filename) ? art.filename : `${base}${art.filename}`;
+}
+function tgdbPlatformName(data, game) {
+  const map=data?.include?.platform?.data||{}; const p=map[String(game.platform)]||map[game.platform];
+  return p?.name || '';
+}
+function mapTgdbResult(data, g={}) {
+  const releaseDate=String(g.release_date||'').slice(0,10);
+  const platform=tgdbPlatformName(data,g);
+  return { provider:'TheGamesDB', id:String(g.id||''), title:g.game_title||g.title||'', releaseDate, year:releaseDate.slice(0,4), cover:tgdbBoxart(data,g.id), platforms:platform?[platform]:[], genres:[], sourceUrl:`https://thegamesdb.net/game.php?id=${g.id}` };
+}
+async function searchTgdb(q) {
+  if (!THEGAMESDB_API_KEY) throw Object.assign(new Error('TheGamesDB is not configured'), {status:503});
+  const data=await tgdbFetch('/v1.1/Games/ByGameName',{name:q,fields:'publishers,genres,overview,platform',include:'boxart,platform'});
+  return (data?.data?.games||[]).slice(0,12).map(g=>mapTgdbResult(data,g));
+}
+async function tgdbRefMap(kind) {
+  const cached=tgdbReferenceCache.get(kind); if (cached && Date.now()<cached.expiresAt) return cached.map;
+  const endpoint={genres:'Genres',developers:'Developers',publishers:'Publishers'}[kind];
+  const data=await tgdbFetch(`/v1/${endpoint}`);
+  const raw=data?.data?.[kind]||{}; const map={};
+  if (Array.isArray(raw)) raw.forEach(x=>map[String(x.id)]=x.name); else Object.values(raw).forEach(x=>map[String(x.id)]=x.name);
+  tgdbReferenceCache.set(kind,{map,expiresAt:Date.now()+6*60*60*1000}); return map;
+}
+async function detailTgdb(id) {
+  const data=await tgdbFetch('/v1/Games/ByGameID',{id,fields:'publishers,genres,overview,platform',include:'boxart,platform'});
+  const g=(data?.data?.games||[])[0]; if(!g) throw Object.assign(new Error('Game not found in TheGamesDB'),{status:404});
+  const [genres,developers,publishers]=await Promise.all([tgdbRefMap('genres'),tgdbRefMap('developers'),tgdbRefMap('publishers')]);
+  const platform=tgdbPlatformName(data,g);
+  return { id:String(g.id), title:g.game_title||'', releaseDate:String(g.release_date||'').slice(0,10), cover:tgdbBoxart(data,g.id), developer:(g.developers||[]).map(x=>developers[String(x)]).filter(Boolean).join(', '), publisher:(g.publishers||[]).map(x=>publishers[String(x)]).filter(Boolean).join(', '), genres:(g.genres||[]).map(x=>genres[String(x)]).filter(Boolean), description:cleanLookupText(g.overview||''), platforms:platform?[platform]:[], source:{provider:'TheGamesDB',id:String(g.id),url:`https://thegamesdb.net/game.php?id=${g.id}`} };
+}
+
+// ----- Steam -----
+let steamAppCache={ apps:[], expiresAt:0 };
+async function steamApps() {
+  if (!STEAM_WEB_API_KEY) throw Object.assign(new Error('Steam is not configured'),{status:503});
+  if (steamAppCache.apps.length && Date.now()<steamAppCache.expiresAt) return steamAppCache.apps;
+  const url=new URL('https://partner.steam-api.com/IStoreService/GetAppList/v1/');
+  url.searchParams.set('key',STEAM_WEB_API_KEY); url.searchParams.set('include_games','true'); url.searchParams.set('include_dlc','false'); url.searchParams.set('include_software','false'); url.searchParams.set('include_videos','false'); url.searchParams.set('include_hardware','false'); url.searchParams.set('max_results','50000');
+  const response=await fetch(url,{headers:{'Accept':'application/json'}});
+  if(!response.ok) throw Object.assign(new Error(`Steam returned ${response.status}`),{status:response.status});
+  const data=await response.json(); const apps=data?.response?.apps||data?.applist?.apps||[];
+  steamAppCache={apps,expiresAt:Date.now()+12*60*60*1000}; return apps;
+}
+async function searchSteam(q) {
+  const apps=await steamApps();
+  return apps.map(a=>({...a,_score:searchScore(a.name||a.app_name||'',q)})).filter(a=>a._score>0).sort((a,b)=>b._score-a._score).slice(0,12).map(a=>{
+    const id=String(a.appid||a.app_id||''); const title=a.name||a.app_name||'';
+    return {provider:'Steam',id,title,releaseDate:'',year:'',cover:`https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_600x900_2x.jpg`,platforms:['PC'],genres:[],sourceUrl:`https://store.steampowered.com/app/${id}/`};
   });
+}
+async function detailSteam(id) {
+  const apps=await steamApps(); const a=apps.find(x=>String(x.appid||x.app_id)===String(id)); if(!a) throw Object.assign(new Error('Game not found in Steam catalogue'),{status:404});
+  const title=a.name||a.app_name||'';
+  return {id:String(id),title,releaseDate:'',cover:`https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/library_600x900_2x.jpg`,developer:'',publisher:'',genres:[],description:'',platforms:['PC'],suggestedCopy:{platform:'Windows PC',type:'Digital',store:'Steam'},source:{provider:'Steam',id:String(id),url:`https://store.steampowered.com/app/${id}/`}};
+}
+
+async function searchProvider(provider,q) {
+  if(provider==='igdb') return searchIgdb(q);
+  if(provider==='thegamesdb') return searchTgdb(q);
+  if(provider==='steam') return searchSteam(q);
+  throw Object.assign(new Error('Unknown lookup provider'),{status:400});
+}
+async function detailProvider(provider,id) {
+  if(provider==='igdb') return detailIgdb(id);
+  if(provider==='thegamesdb') return detailTgdb(id);
+  if(provider==='steam') return detailSteam(id);
+  throw Object.assign(new Error('Unknown lookup provider'),{status:400});
+}
+
+app.get('/api/lookup/status', requireAdmin, (req,res)=>{
+  const providers=lookupProviders();
+  res.json({configured:providers.some(p=>p.configured),providers});
 });
 
-app.get('/api/lookup/search', requireAdmin, async (req, res) => {
-  const q = String(req.query.q || '').trim();
-  if (!q) return res.status(400).json({ error: 'Enter a game title to search' });
-  if (!MOBYGAMES_API_KEY) {
-    return res.status(503).json({ error: 'Automatic game lookup needs MOBYGAMES_API_KEY in Railway → Variables.' });
-  }
-  try {
-    const data = await mobyFetch('/games', { title: q, format: 'normal', limit: 12 });
-    res.json({ provider: 'MobyGames', query: q, results: (data.games || []).map(mapMobySearchResult) });
-  } catch (err) {
-    console.error('MobyGames search failed:', err);
-    if (err.status === 401) return res.status(502).json({ error: 'MobyGames rejected the API key. Check MOBYGAMES_API_KEY in Railway → Variables.' });
-    if (err.status === 429) return res.status(429).json({ error: 'MobyGames rate limit reached. Wait a few seconds and try again.' });
-    res.status(502).json({ error: 'Could not search MobyGames right now. Please try again.' });
-  }
+app.get('/api/lookup/search', requireAdmin, async (req,res)=>{
+  const q=String(req.query.q||'').trim(); const requested=String(req.query.provider||'all').toLowerCase();
+  if(!q) return res.status(400).json({error:'Enter a game title to search'});
+  const providers=lookupProviders().filter(p=>p.configured && (requested==='all'||p.id===requested));
+  if(!providers.length) return res.status(503).json({error:'No game lookup source is configured yet. Add IGDB, TheGamesDB or Steam credentials in Railway → Variables.'});
+  const settled=await Promise.allSettled(providers.map(async p=>({provider:p.id,results:await searchProvider(p.id,q)})));
+  const results=[]; const errors=[];
+  for(const r of settled){ if(r.status==='fulfilled') results.push(...r.value.results); else errors.push(r.reason?.message||'Lookup failed'); }
+  results.sort((a,b)=>searchScore(b.title,q)-searchScore(a.title,q));
+  res.json({query:q,provider:requested,results:results.slice(0,30),errors});
 });
 
-app.get('/api/lookup/game/:id', requireAdmin, async (req, res) => {
-  if (!MOBYGAMES_API_KEY) {
-    return res.status(503).json({ error: 'Automatic game lookup needs MOBYGAMES_API_KEY in Railway → Variables.' });
-  }
-  try {
-    const g = await mobyFetch(`/games/${encodeURIComponent(req.params.id)}`, { format: 'normal' });
-    const releaseDate = mobyReleaseDate(g);
-    const developers = mobyCompanyNames(g.developers || g.developer || g.companies?.developers);
-    const publishers = mobyCompanyNames(g.publishers || g.publisher || g.companies?.publishers);
-    res.json({
-      id: g.game_id ?? g.id,
-      title: g.title || '',
-      releaseDate,
-      cover: mobyCover(g),
-      developer: developers.join(', '),
-      publisher: publishers.join(', '),
-      genres: mobyGenreNames(g),
-      description: cleanLookupText(g.description || g.game_description || ''),
-      platforms: mobyPlatformNames(g),
-      website: g.official_url || '',
-      source: {
-        provider: 'MobyGames',
-        id: String(g.game_id ?? g.id ?? req.params.id),
-        url: g.moby_url || 'https://www.mobygames.com/'
-      }
-    });
-  } catch (err) {
-    console.error('MobyGames detail failed:', err);
-    if (err.status === 401) return res.status(502).json({ error: 'MobyGames rejected the API key. Check MOBYGAMES_API_KEY in Railway → Variables.' });
-    if (err.status === 429) return res.status(429).json({ error: 'MobyGames rate limit reached. Wait a few seconds and try again.' });
-    res.status(502).json({ error: 'Could not load that game from MobyGames right now.' });
-  }
+app.get('/api/lookup/game/:provider/:id', requireAdmin, async (req,res)=>{
+  const provider=String(req.params.provider||'').toLowerCase();
+  const state=lookupProviders().find(p=>p.id===provider);
+  if(!state?.configured) return res.status(503).json({error:`${state?.name||'That source'} is not configured.`});
+  try { res.json(await detailProvider(provider,req.params.id)); }
+  catch(err){ console.error(`${provider} detail failed:`,err); res.status(err.status===404?404:502).json({error:`Could not load that game from ${state.name} right now.`}); }
 });
 
 // ---------- Public read-only collection ----------
@@ -394,7 +456,7 @@ app.get('/api/stats', (req, res) => {
 
 // ---------- Admin-only mutation / management ----------
 app.get('/api/health', requireAdmin, (req, res) => {
-  res.json({ ok: true, dataDir: DATA_DIR, persistent: DATA_DIR === '/data', lookupConfigured: Boolean(MOBYGAMES_API_KEY) });
+  res.json({ ok: true, dataDir: DATA_DIR, persistent: DATA_DIR === '/data', lookupConfigured: lookupConfigured(), lookupProviders: lookupProviders() });
 });
 
 app.post('/api/games', requireAdmin, (req, res) => {
