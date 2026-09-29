@@ -7,6 +7,7 @@ let stats = {};
 let auth = { configured: false, authenticated: false, username: null };
 let view = 'home';
 let platformFilter = '';
+let storeFilter = '';
 let search = '';
 
 const api = async (url, options = {}) => {
@@ -29,7 +30,7 @@ function esc(v = '') {
 
 const escapeHtml = esc;
 function yearOf(g) { return g.releaseDate ? g.releaseDate.slice(0, 4) : ''; }
-function copiesText(g) { return (g.copies || []).map(c => c.platform).join(' · '); }
+function copiesText(g) { return (g.copies || []).map(c => [c.platform, c.store].filter(Boolean).join(' ')).join(' · '); }
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
@@ -71,7 +72,7 @@ async function load() {
 
 function visibleGames() {
   let list = [...games];
-  if (view === 'digital') list = list.filter(g => g.copies?.some(c => c.type === 'Digital'));
+  if (view === 'digital') list = list.filter(g => g.copies?.some(c => c.type === 'Digital' && (!storeFilter || c.store === storeFilter)));
   if (view === 'physical') list = list.filter(g => g.copies?.some(c => c.type === 'Physical'));
   if (view === 'backlog') list = list.filter(g => ['Backlog', 'Unplayed'].includes(g.status));
   if (view === 'favourites') list = list.filter(g => g.favourite);
@@ -87,6 +88,7 @@ function visibleGames() {
 function card(g) {
   const types = [...new Set((g.copies || []).map(c => c.type))];
   const platforms = [...new Set((g.copies || []).map(c => c.platform))];
+  const stores = [...new Set((g.copies || []).filter(c => c.type === 'Digital' && c.store).map(c => c.store))];
   return `<article class="game-card" data-game="${g.id}">
     <div class="cover">
       ${g.cover ? `<img src="${esc(g.cover)}" alt="${esc(g.title)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'cover-fallback',textContent:${JSON.stringify(g.title)}}))">` : `<div class="cover-fallback">${esc(g.title)}</div>`}
@@ -95,15 +97,17 @@ function card(g) {
     <div class="game-info">
       <h3>${esc(g.title)}</h3>
       <div class="game-meta">${esc(platforms.slice(0, 2).join(' · '))}${platforms.length > 2 ? ` +${platforms.length - 2}` : ''}${yearOf(g) ? `<br>${yearOf(g)}` : ''}</div>
-      <div class="badges">${types.map(t => `<span class="badge ${t.toLowerCase()}">${t}</span>`).join('')}<span class="badge">${(g.copies || []).length} ${(g.copies || []).length === 1 ? 'copy' : 'copies'}</span></div>
+      <div class="badges">${types.map(t => `<span class="badge ${t.toLowerCase()}">${t}</span>`).join('')}${view === 'digital' ? stores.slice(0,2).map(s => `<span class="badge store-badge">${esc(s)}</span>`).join('') : ''}<span class="badge">${(g.copies || []).length} ${(g.copies || []).length === 1 ? 'copy' : 'copies'}</span></div>
     </div>
   </article>`;
 }
 
 function homeView() {
   const list = visibleGames();
-  const title = platformFilter ? platformFilter : view === 'home' ? 'My Game Collection' : ({ digital:'Digital Library', physical:'Physical Collection', backlog:'Backlog', favourites:'Favourites', completed:'Completed Games' }[view] || 'Collection');
+  const title = storeFilter ? `${storeFilter} Library` : platformFilter ? platformFilter : view === 'home' ? 'My Game Collection' : ({ digital:'Digital Library', physical:'Physical Collection', backlog:'Backlog', favourites:'Favourites', completed:'Completed Games' }[view] || 'Collection');
   const adminAdd = auth.authenticated ? '<button class="primary" id="quickAdd">+ Add Game</button>' : '';
+  const digitalBack = view === 'digital' && storeFilter ? '<button class="secondary" id="digitalStoreBack">← All Digital Stores</button>' : '';
+  const sectionActions = (digitalBack || adminAdd) ? `<div class="section-actions">${digitalBack}${adminAdd}</div>` : '';
   const emptyText = auth.authenticated ? 'Add your first game or change the current filters.' : 'No games match the current view.';
   return `<section class="hero hero-with-logo">
       <div class="hero-logo-wrap"><img class="hero-logo" src="/critchell-game-collection-logo.png" alt="Critchell Game Collection"><p>Every physical and digital game in one place — across consoles, PC storefronts, editions and generations.</p></div>
@@ -122,8 +126,50 @@ function homeView() {
       <select id="platformSelect" class="filter"><option value="">All platforms</option>${platformOptions(platformFilter, true)}</select>
       <select id="formatSelect" class="filter"><option value="">Current view</option><option value="home">All games</option><option value="physical">Physical</option><option value="digital">Digital</option><option value="backlog">Backlog</option><option value="completed">Completed</option><option value="favourites">Favourites</option></select>
     </div>
-    <div class="section-head"><div><span class="eyebrow">LIBRARY</span><h2>${esc(title)}</h2><p>${list.length} ${list.length === 1 ? 'game' : 'games'} shown</p></div>${adminAdd}</div>
+    <div class="section-head"><div><span class="eyebrow">LIBRARY</span><h2>${esc(title)}</h2><p>${list.length} ${list.length === 1 ? 'game' : 'games'} shown</p></div>${sectionActions}</div>
     ${list.length ? `<section class="game-grid">${list.map(card).join('')}</section>` : `<div class="empty"><strong>No games here yet</strong>${emptyText}</div>`}`;
+}
+
+function digitalStoresView() {
+  const configuredStores = config?.stores || [];
+  const storeGameIds = {};
+  const storeCopyCounts = {};
+
+  configuredStores.forEach(store => {
+    storeGameIds[store] = new Set();
+    storeCopyCounts[store] = 0;
+  });
+
+  games.forEach(g => (g.copies || []).forEach(c => {
+    if (c.type !== 'Digital') return;
+    const store = c.store || 'Other';
+    if (!storeGameIds[store]) storeGameIds[store] = new Set();
+    storeGameIds[store].add(g.id);
+    storeCopyCounts[store] = (storeCopyCounts[store] || 0) + 1;
+  }));
+
+  const orderedStores = [...new Set([...configuredStores, ...Object.keys(storeGameIds)])];
+  const cards = orderedStores.map(store => {
+    const gamesCount = storeGameIds[store]?.size || 0;
+    const copiesCount = storeCopyCounts[store] || 0;
+    const initials = store.split(/\s+/).filter(Boolean).slice(0, 3).map(w => w[0]).join('').toUpperCase();
+    return `<button class="store-folder ${gamesCount ? '' : 'empty-store'}" type="button" data-store="${esc(store)}">
+      <span class="folder-tab"></span>
+      <span class="store-folder-mark">${esc(initials || 'D')}</span>
+      <span class="store-folder-copy"><strong>${esc(store)}</strong><small>${gamesCount} ${gamesCount === 1 ? 'game' : 'games'} · ${copiesCount} ${copiesCount === 1 ? 'copy' : 'copies'}</small></span>
+      <span class="store-folder-arrow">→</span>
+    </button>`;
+  }).join('');
+
+  const digitalGames = games.filter(g => g.copies?.some(c => c.type === 'Digital')).length;
+  const digitalCopies = games.reduce((sum, g) => sum + (g.copies || []).filter(c => c.type === 'Digital').length, 0);
+
+  return `<section class="hero compact-hero">
+    <div><span class="eyebrow">DIGITAL LIBRARY</span><h1>CHOOSE A <span>STOREFRONT</span></h1><p>Your digital collection is organised by launcher and store. Pick one to see only the games you own there.</p></div>
+    <div class="hero-card"><strong>${digitalGames}</strong><span>digital games · ${digitalCopies} owned copies</span></div>
+  </section>
+  <div class="section-head"><div><span class="eyebrow">STORES & LAUNCHERS</span><h2>My Digital Collection</h2><p>Select a storefront to open that part of your library.</p></div></div>
+  <section class="store-folder-grid">${cards}</section>`;
 }
 
 function platformsView() {
@@ -134,7 +180,7 @@ function platformsView() {
 }
 
 function render() {
-  $('#app').innerHTML = view === 'platforms' ? platformsView() : homeView();
+  $('#app').innerHTML = view === 'platforms' ? platformsView() : (view === 'digital' && !storeFilter ? digitalStoresView() : homeView());
   $$('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   bindPage();
   updateAdminButton();
@@ -143,20 +189,23 @@ function render() {
 function bindPage() {
   $('#searchBox')?.addEventListener('input', e => { search = e.target.value; render(); });
   $('#platformSelect')?.addEventListener('change', e => { platformFilter = e.target.value; render(); });
-  $('#formatSelect')?.addEventListener('change', e => { if (e.target.value) { view = e.target.value; platformFilter = ''; render(); } });
+  $('#formatSelect')?.addEventListener('change', e => { if (e.target.value) { view = e.target.value; platformFilter = ''; storeFilter = ''; render(); } });
   $('#quickAdd')?.addEventListener('click', () => openForm());
+  $('#digitalStoreBack')?.addEventListener('click', () => { storeFilter = ''; search = ''; render(); });
+  $$('[data-store]').forEach(el => el.addEventListener('click', () => { storeFilter = el.dataset.store; platformFilter = ''; search = ''; view = 'digital'; render(); }));
   $$('[data-stat-view]').forEach(el => el.addEventListener('click', () => {
     view = el.dataset.statView;
     platformFilter = '';
+    storeFilter = '';
     search = '';
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }));
   $$('[data-game]').forEach(el => el.addEventListener('click', () => openDetail(el.dataset.game)));
-  $$('[data-platform]').forEach(el => el.addEventListener('click', () => { platformFilter = el.dataset.platform; view = 'home'; render(); }));
+  $$('[data-platform]').forEach(el => el.addEventListener('click', () => { platformFilter = el.dataset.platform; storeFilter = ''; view = 'home'; render(); }));
 }
 
-$$('[data-view]').forEach(btn => btn.addEventListener('click', () => { view = btn.dataset.view; platformFilter = ''; search = ''; render(); }));
+$$('[data-view]').forEach(btn => btn.addEventListener('click', () => { view = btn.dataset.view; platformFilter = ''; storeFilter = ''; search = ''; render(); }));
 $('#adminBtn').addEventListener('click', handleAdminButton);
 $$('[data-close]').forEach(btn => btn.addEventListener('click', () => btn.closest('dialog').close()));
 
