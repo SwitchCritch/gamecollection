@@ -26,6 +26,8 @@ const api = async (url, options = {}) => {
 function esc(v = '') {
   return String(v).replace(/[&<>'"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[c]));
 }
+
+const escapeHtml = esc;
 function yearOf(g) { return g.releaseDate ? g.releaseDate.slice(0, 4) : ''; }
 function copiesText(g) { return (g.copies || []).map(c => c.platform).join(' · '); }
 function toast(msg) {
