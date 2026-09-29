@@ -117,3 +117,7 @@ The catalogue itself is stored as `/data/collection.json` when the Railway volum
 Log in, open **ADMIN**, then use **Export Backup** to download the complete collection as JSON. Use **Import Backup** to restore it.
 
 Game metadata/artwork lookup is powered by RAWG; attribution is included in the site footer.
+
+
+### Admin login troubleshooting
+If the site says **Admin setup required**, the server has not detected `ADMIN_USERNAME` and `ADMIN_PASSWORD`. Add both under **Railway → your service → Variables**, redeploy, then click **Check again** on the login screen. The browser form cannot create the admin account.

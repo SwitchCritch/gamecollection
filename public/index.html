@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=1.3" />
 </head>
 <body>
   <div class="bg-grid"></div>
@@ -104,6 +104,7 @@
       <label id="authConfirmWrap" hidden>Confirm password<input id="authConfirmPassword" type="password" autocomplete="new-password"></label>
       <div class="form-actions">
         <button type="button" class="secondary" data-close>Cancel</button>
+        <button id="authRecheck" type="button" class="secondary" hidden>Check again</button>
         <button id="authSubmit" type="submit" class="primary">Log in</button>
       </div>
     </form>
@@ -150,6 +151,6 @@
   </template>
 
   <footer class="site-footer">Game metadata and artwork lookup powered by <a href="https://rawg.io/" target="_blank" rel="noopener">RAWG</a>.</footer>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=1.3"></script>
 </body>
 </html>

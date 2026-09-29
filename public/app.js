@@ -166,14 +166,15 @@ function openAuth() {
   $('#authHeading').textContent = configured ? 'Collection management is protected' : 'Set your private admin credentials in Railway';
   $('#authText').innerHTML = configured
     ? 'Log in to add, search, edit, import or delete games.'
-    : 'In <strong>Railway → Variables</strong>, add <code>ADMIN_USERNAME</code> and <code>ADMIN_PASSWORD</code>, then redeploy the service. Visitors cannot create an admin account from the website.';
+    : '<strong>There is no admin account configured on the server yet.</strong><br><br>In <strong>Railway → your service → Variables</strong>, add <code>ADMIN_USERNAME</code> and <code>ADMIN_PASSWORD</code>, then redeploy. Do not type your new password into this screen until the site reports that admin login is configured.';
   $('#authUsernameWrap').hidden = !configured;
   $('#authPasswordWrap').hidden = !configured;
   $('#authConfirmWrap').hidden = true;
   $('#authConfirmPassword').required = false;
   $('#authSubmit').hidden = !configured;
+  $('#authRecheck').hidden = configured;
   $('#authSubmit').textContent = 'Log in';
-  $('#authMessage').textContent = '';
+  $('#authMessage').textContent = configured ? '' : 'Waiting for Railway admin variables.';
   $('#authMessage').classList.remove('error');
   $('#authUsername').value = '';
   $('#authPassword').value = '';
@@ -183,7 +184,11 @@ function openAuth() {
 
 $('#authForm').addEventListener('submit', async e => {
   e.preventDefault();
-  if (!auth.configured) return;
+  if (!auth.configured) {
+    $('#authMessage').textContent = 'Admin login is not configured yet. Add ADMIN_USERNAME and ADMIN_PASSWORD in Railway first.';
+    $('#authMessage').classList.add('error');
+    return;
+  }
   const username = $('#authUsername').value.trim();
   const password = $('#authPassword').value;
   $('#authMessage').classList.remove('error');
@@ -201,6 +206,30 @@ $('#authForm').addEventListener('submit', async e => {
   } catch (err) {
     $('#authMessage').textContent = err.message;
     $('#authMessage').classList.add('error');
+  }
+});
+
+
+$('#authRecheck').addEventListener('click', async () => {
+  const btn = $('#authRecheck');
+  btn.disabled = true;
+  $('#authMessage').classList.remove('error');
+  $('#authMessage').textContent = 'Checking Railway configuration…';
+  try {
+    await refreshAuth();
+    if (auth.configured) {
+      $('#authDialog').close();
+      openAuth();
+      toast('Admin login is ready');
+    } else {
+      $('#authMessage').textContent = 'Still not configured. Make sure both Railway variables exist and the latest deployment has finished.';
+      $('#authMessage').classList.add('error');
+    }
+  } catch (err) {
+    $('#authMessage').textContent = err.message;
+    $('#authMessage').classList.add('error');
+  } finally {
+    btn.disabled = false;
   }
 });
 
