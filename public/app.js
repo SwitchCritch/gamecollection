@@ -91,8 +91,65 @@ function addCopy(copy={}){
  card.querySelector('.copy-type').addEventListener('change',sync);card.querySelector('.remove-copy').addEventListener('click',()=>{card.remove();if(!$('#copies').children.length)addCopy()});sync();$('#copies').appendChild(node);
 }
 
+
+function lookupResultCard(g){
+ const platforms=(g.platforms||[]).slice(0,5).join(' · ');
+ return `<button type="button" class="lookup-result" data-lookup-id="${esc(g.id)}"><div>${g.cover?`<img src="${esc(g.cover)}" alt="" loading="lazy">`:`<div class="lookup-cover-fallback">NO COVER</div>`}</div><div><strong>${esc(g.title)}</strong><small>${esc(g.year||'Release date unknown')}${g.genres?.length?' · '+esc(g.genres.slice(0,2).join(', ')):''}</small><small>${esc(platforms||'Platform information unavailable')}${(g.platforms||[]).length>5?' …':''}</small><small class="choose">Do you mean this one? →</small></div></button>`;
+}
+
+async function searchGameLookup(){
+ const q=$('#lookupQuery').value.trim();
+ if(!q){$('#lookupMessage').textContent='Type a game title first.';$('#lookupMessage').classList.add('error');return}
+ $('#lookupBtn').disabled=true;$('#lookupResults').innerHTML='<div class="lookup-loading">Searching game database…</div>';$('#lookupMessage').textContent=`Looking for “${q}”…`;$('#lookupMessage').classList.remove('error');
+ try{
+   const data=await api('/api/lookup/search?q='+encodeURIComponent(q));
+   const results=data.results||[];
+   $('#lookupMessage').textContent=results.length?`I found ${results.length} possible ${results.length===1?'match':'matches'}. Which one do you mean?`:'No matches found. Try a slightly different title or enter the details manually.';
+   $('#lookupResults').innerHTML=results.map(lookupResultCard).join('');
+   $$('#lookupResults [data-lookup-id]').forEach(btn=>btn.addEventListener('click',()=>selectLookupGame(btn.dataset.lookupId)));
+ }catch(err){
+   $('#lookupResults').innerHTML='';$('#lookupMessage').textContent=err.message;$('#lookupMessage').classList.add('error');
+ }finally{$('#lookupBtn').disabled=false}
+}
+
+async function selectLookupGame(id){
+ $('#lookupMessage').textContent='Loading full game details…';$('#lookupMessage').classList.remove('error');
+ try{
+   const g=await api('/api/lookup/game/'+encodeURIComponent(id));
+   $('#title').value=g.title||'';$('#releaseDate').value=g.releaseDate||'';$('#developer').value=g.developer||'';$('#publisher').value=g.publisher||'';$('#genres').value=(g.genres||[]).join(', ');$('#cover').value=g.cover||'';$('#description').value=g.description||'';
+   $('#sourceProvider').value=g.source?.provider||'RAWG';$('#sourceId').value=g.source?.id||String(id);$('#sourceUrl').value=g.source?.url||'';
+   $('#lookupQuery').value=g.title||$('#lookupQuery').value;
+   $('#lookupResults').innerHTML='';$('#lookupMessage').innerHTML=`✓ Selected <strong>${esc(g.title)}</strong>. Details filled in automatically. Now choose which version you own below.`;
+   const platform=g.platforms?.[0];
+   if(platform) suggestPlatformForCopy(g.platforms);
+ }catch(err){$('#lookupMessage').textContent=err.message;$('#lookupMessage').classList.add('error')}
+}
+
+function normalizedPlatformMatch(raw=''){
+ const n=raw.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+ const aliases={
+   'pc':'Windows PC','playstation':'PlayStation','playstation 2':'PlayStation 2','playstation 3':'PlayStation 3','playstation 4':'PlayStation 4','playstation 5':'PlayStation 5',
+   'psp':'PSP','ps vita':'PlayStation Vita','xbox':'Xbox','xbox 360':'Xbox 360','xbox one':'Xbox One','xbox series s x':'Xbox Series X/S','xbox series x s':'Xbox Series X/S',
+   'nintendo switch':'Nintendo Switch','nintendo switch 2':'Nintendo Switch 2','wii':'Nintendo Wii','wii u':'Nintendo Wii U','gamecube':'Nintendo GameCube','nintendo 64':'Nintendo 64',
+   'game boy':'Game Boy','game boy color':'Game Boy Color','game boy advance':'Game Boy Advance','nintendo ds':'Nintendo DS','nintendo 3ds':'Nintendo 3DS',
+   'dreamcast':'Dreamcast','sega saturn':'Saturn','genesis':'Mega Drive / Genesis','sega genesis':'Mega Drive / Genesis'
+ };
+ return aliases[n]||'';
+}
+
+function suggestPlatformForCopy(platforms=[]){
+ const select=$('#copies .copy-platform');
+ if(!select||select.value)return;
+ for(const p of platforms){const mapped=normalizedPlatformMatch(p);if(mapped&&[...select.options].some(o=>o.value===mapped)){select.value=mapped;break}}
+}
+
+$('#lookupBtn').addEventListener('click',searchGameLookup);
+$('#lookupQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchGameLookup()}});
+
 function openForm(game=null){
  $('#formTitle').textContent=game?'Edit game':'Add game';$('#gameId').value=game?.id||'';$('#title').value=game?.title||'';$('#releaseDate').value=game?.releaseDate||'';$('#developer').value=game?.developer||'';$('#publisher').value=game?.publisher||'';$('#genres').value=(game?.genres||[]).join(', ');$('#cover').value=game?.cover||'';$('#rating').value=game?.rating||'';$('#favourite').checked=!!game?.favourite;$('#description').value=game?.description||'';$('#notes').value=game?.notes||'';
+ $('#sourceProvider').value=game?.source?.provider||'';$('#sourceId').value=game?.source?.id||'';$('#sourceUrl').value=game?.source?.url||'';
+ $('#lookupQuery').value=game?.title||'';$('#lookupResults').innerHTML='';$('#lookupMessage').textContent=game?.source?.provider?`Metadata linked to ${game.source.provider}. Search again to replace it.`:'Search above to fill these details automatically, or enter them manually.';$('#lookupMessage').classList.remove('error');
  $('#status').innerHTML=(config.statuses||[]).map(s=>`<option ${s===(game?.status||'Backlog')?'selected':''}>${esc(s)}</option>`).join('');
  $('#copies').innerHTML='';(game?.copies?.length?game.copies:[{}]).forEach(addCopy);$('#gameDialog').showModal();
 }
@@ -101,7 +158,8 @@ $('#gameForm').addEventListener('submit',async e=>{
  e.preventDefault();
  try{
   const copies=$$('#copies .copy-card').map(card=>({platform:card.querySelector('.copy-platform').value,type:card.querySelector('.copy-type').value,store:card.querySelector('.copy-store').value,edition:card.querySelector('.copy-edition').value,region:card.querySelector('.copy-region').value,notes:card.querySelector('.copy-notes').value,box:card.querySelector('.copy-box').checked,manual:card.querySelector('.copy-manual').checked,media:card.querySelector('.copy-media').checked,steelbook:card.querySelector('.copy-steelbook').checked}));
-  const body={title:$('#title').value,releaseDate:$('#releaseDate').value,developer:$('#developer').value,publisher:$('#publisher').value,genres:$('#genres').value,cover:$('#cover').value,rating:$('#rating').value,favourite:$('#favourite').checked,description:$('#description').value,notes:$('#notes').value,status:$('#status').value,copies};
+  const source=$('#sourceProvider').value?{provider:$('#sourceProvider').value,id:$('#sourceId').value,url:$('#sourceUrl').value}:null;
+  const body={title:$('#title').value,releaseDate:$('#releaseDate').value,developer:$('#developer').value,publisher:$('#publisher').value,genres:$('#genres').value,cover:$('#cover').value,rating:$('#rating').value,favourite:$('#favourite').checked,description:$('#description').value,notes:$('#notes').value,status:$('#status').value,copies,source};
   const id=$('#gameId').value;await api(id?`/api/games/${id}`:'/api/games',{method:id?'PUT':'POST',body:JSON.stringify(body)});$('#gameDialog').close();toast(id?'Game updated':'Game added');await load();
  }catch(err){alert(err.message)}
 });

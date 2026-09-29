@@ -39,6 +39,23 @@
     </div>
     <form id="gameForm">
       <input type="hidden" id="gameId">
+      <input type="hidden" id="sourceProvider">
+      <input type="hidden" id="sourceId">
+      <input type="hidden" id="sourceUrl">
+
+      <section class="lookup-panel">
+        <div class="lookup-heading">
+          <div><span class="eyebrow">GAME LOOKUP</span><h3>Find the game automatically</h3><p>Type a title and choose the correct game from the matches.</p></div>
+          <span class="lookup-provider">Powered by <a href="https://rawg.io/" target="_blank" rel="noopener">RAWG</a></span>
+        </div>
+        <div class="lookup-search-row">
+          <input id="lookupQuery" autocomplete="off" placeholder="e.g. Silent Hill 2">
+          <button type="button" id="lookupBtn" class="primary">Search games</button>
+        </div>
+        <div id="lookupMessage" class="lookup-message"></div>
+        <div id="lookupResults" class="lookup-results"></div>
+      </section>
+
       <div class="form-grid">
         <label class="span-2">Game title<input id="title" required placeholder="e.g. Resident Evil 4"></label>
         <label>Release date<input id="releaseDate" type="date"></label>
@@ -107,6 +124,7 @@
     </section>
   </template>
 
+  <footer class="site-footer">Game metadata and artwork lookup powered by <a href="https://rawg.io/" target="_blank" rel="noopener">RAWG</a>.</footer>
   <script src="/app.js"></script>
 </body>
 </html>

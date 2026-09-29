@@ -7,6 +7,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || (fs.existsSync('/data') ? '/data' : path.join(__dirname, 'data'));
 const DATA_FILE = path.join(DATA_DIR, 'collection.json');
+const RAWG_API_KEY = process.env.RAWG_API_KEY || '';
+const RAWG_BASE = 'https://api.rawg.io/api';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -102,6 +104,11 @@ function normalizeGame(body, existing = {}) {
     favourite: Boolean(body.favourite),
     rating: Math.max(0, Math.min(10, Number(body.rating) || 0)),
     notes: String(body.notes || '').trim(),
+    source: body.source && typeof body.source === 'object' ? {
+      provider: String(body.source.provider || '').trim(),
+      id: String(body.source.id || '').trim(),
+      url: String(body.source.url || '').trim()
+    } : (existing.source || null),
     copies,
     createdAt: existing.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -110,6 +117,80 @@ function normalizeGame(body, existing = {}) {
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+
+function cleanRawgText(value = '') {
+  return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function rawgPlatformNames(game = {}) {
+  return (game.platforms || []).map(p => p?.platform?.name).filter(Boolean);
+}
+
+function mapRawgSearchResult(game = {}) {
+  return {
+    id: game.id,
+    title: game.name || '',
+    releaseDate: game.released || '',
+    year: game.released ? String(game.released).slice(0, 4) : '',
+    cover: game.background_image || '',
+    platforms: rawgPlatformNames(game),
+    genres: (game.genres || []).map(g => g.name).filter(Boolean),
+    metacritic: game.metacritic || null,
+    sourceUrl: game.slug ? `https://rawg.io/games/${game.slug}` : ''
+  };
+}
+
+app.get('/api/lookup/status', (req, res) => {
+  res.json({ provider: 'RAWG', configured: Boolean(RAWG_API_KEY), attributionUrl: 'https://rawg.io/' });
+});
+
+app.get('/api/lookup/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Enter a game title to search' });
+  if (!RAWG_API_KEY) return res.status(503).json({ error: 'Game lookup is not configured yet. Add RAWG_API_KEY to your Railway environment variables.' });
+  try {
+    const url = new URL(`${RAWG_BASE}/games`);
+    url.searchParams.set('key', RAWG_API_KEY);
+    url.searchParams.set('search', q);
+    url.searchParams.set('search_precise', 'true');
+    url.searchParams.set('page_size', '12');
+    const response = await fetch(url, { headers: { 'User-Agent': 'CritchellGameCollection/1.1' } });
+    if (!response.ok) throw new Error(`RAWG returned ${response.status}`);
+    const data = await response.json();
+    res.json({ provider: 'RAWG', query: q, results: (data.results || []).map(mapRawgSearchResult) });
+  } catch (err) {
+    console.error('RAWG search failed:', err);
+    res.status(502).json({ error: 'Could not search the game database right now. Please try again.' });
+  }
+});
+
+app.get('/api/lookup/game/:id', async (req, res) => {
+  if (!RAWG_API_KEY) return res.status(503).json({ error: 'Game lookup is not configured yet. Add RAWG_API_KEY to your Railway environment variables.' });
+  try {
+    const url = new URL(`${RAWG_BASE}/games/${encodeURIComponent(req.params.id)}`);
+    url.searchParams.set('key', RAWG_API_KEY);
+    const response = await fetch(url, { headers: { 'User-Agent': 'CritchellGameCollection/1.1' } });
+    if (!response.ok) throw new Error(`RAWG returned ${response.status}`);
+    const g = await response.json();
+    res.json({
+      id: g.id,
+      title: g.name || '',
+      releaseDate: g.released || '',
+      cover: g.background_image || '',
+      developer: (g.developers || []).map(x => x.name).filter(Boolean).join(', '),
+      publisher: (g.publishers || []).map(x => x.name).filter(Boolean).join(', '),
+      genres: (g.genres || []).map(x => x.name).filter(Boolean),
+      description: cleanRawgText(g.description_raw || g.description || ''),
+      platforms: rawgPlatformNames(g),
+      website: g.website || '',
+      source: { provider: 'RAWG', id: String(g.id), url: g.slug ? `https://rawg.io/games/${g.slug}` : 'https://rawg.io/' }
+    });
+  } catch (err) {
+    console.error('RAWG detail failed:', err);
+    res.status(502).json({ error: 'Could not load that game from the game database right now.' });
+  }
+});
 
 app.get('/api/health', (req,res) => res.json({ ok:true, dataDir: DATA_DIR, persistent: DATA_DIR === '/data' }));
 
