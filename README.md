@@ -103,3 +103,11 @@ For Steam batch files generated for this site, use **Import Games (Merge)**.
 
 ## v1.7 - Bulk metadata enrichment
 Admin now includes **Auto-fill Missing Metadata**. It works through games with missing cover/details using configured lookup providers (TheGamesDB first, then IGDB, then Steam) and preserves metadata already entered. This is useful after a large Merge Import.
+
+## v1.8 persistence safety fix
+
+On Railway the app now reads the platform-provided `RAILWAY_VOLUME_MOUNT_PATH` automatically, instead of assuming the volume is always mounted at `/data`. This prevents an attached volume at `/app/data` (or another mount path) from being ignored.
+
+The app also checks common legacy paths (`/data/collection.json`, `/app/data/collection.json`, and the old project `data/collection.json`) and copies the best existing collection into the active volume if the new active collection file does not yet exist.
+
+When running on Railway without an attached volume, all collection-changing endpoints are safety-locked. The public site can still load, but Add/Edit/Delete/Import/Auto-enrich cannot write to temporary storage. Attach a Railway Volume to the service, redeploy, then open Admin to confirm the exact persistent mount path and saved game count.

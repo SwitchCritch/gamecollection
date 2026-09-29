@@ -7,8 +7,13 @@ const app = express();
 app.set('trust proxy', 1);
 
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = process.env.DATA_DIR || (fs.existsSync('/data') ? '/data' : path.join(__dirname, 'data'));
+const IS_RAILWAY = Boolean(process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_ENVIRONMENT_ID || process.env.RAILWAY_SERVICE_ID);
+const RAILWAY_VOLUME_MOUNT_PATH = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim();
+// Railway exposes the real attached-volume mount path at runtime. Always prefer it.
+// This fixes collections disappearing when a volume is mounted somewhere other than /data.
+const DATA_DIR = String(process.env.DATA_DIR || RAILWAY_VOLUME_MOUNT_PATH || (IS_RAILWAY ? '/data' : path.join(__dirname, 'data'))).trim();
 const DATA_FILE = path.join(DATA_DIR, 'collection.json');
+const STORAGE_PERSISTENT = !IS_RAILWAY || Boolean(RAILWAY_VOLUME_MOUNT_PATH);
 const IGDB_CLIENT_ID = String(process.env.IGDB_CLIENT_ID || '').trim();
 const IGDB_CLIENT_SECRET = String(process.env.IGDB_CLIENT_SECRET || '').trim();
 const THEGAMESDB_API_KEY = String(process.env.THEGAMESDB_API_KEY || '').trim();
@@ -22,6 +27,35 @@ const ADMIN_PASSWORD = String(process.env.ADMIN_PASSWORD || '');
 const ADMIN_SESSION_SECRET = process.env.ADMIN_SESSION_SECRET || crypto.createHash('sha256').update(`critchell-game-collection:${ADMIN_PASSWORD}`).digest('hex');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
+
+function readGameCount(file) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return Array.isArray(parsed?.games) ? parsed.games.length : -1;
+  } catch { return -1; }
+}
+
+function recoverLegacyCollectionIfNeeded() {
+  if (fs.existsSync(DATA_FILE)) return null;
+  const candidates = [
+    '/data/collection.json',
+    '/app/data/collection.json',
+    path.join(__dirname, 'data', 'collection.json')
+  ].filter((v, i, a) => v !== DATA_FILE && a.indexOf(v) === i && fs.existsSync(v));
+
+  const viable = candidates
+    .map(file => ({ file, games: readGameCount(file) }))
+    .filter(x => x.games >= 0)
+    .sort((a, b) => b.games - a.games);
+
+  if (!viable.length) return null;
+  const best = viable[0];
+  fs.copyFileSync(best.file, DATA_FILE);
+  console.log(`Recovered collection (${best.games} games) from legacy path ${best.file} -> ${DATA_FILE}`);
+  return best;
+}
+
+const RECOVERED_FROM = recoverLegacyCollectionIfNeeded();
 
 const platformGroups = {
   'Nintendo': ['Nintendo Entertainment System (NES)','Super Nintendo (SNES)','Nintendo 64','Nintendo GameCube','Nintendo Wii','Nintendo Wii U','Nintendo Switch','Nintendo Switch 2','Game Boy','Game Boy Color','Game Boy Advance','Nintendo DS','Nintendo 3DS','Virtual Boy'],
@@ -455,11 +489,33 @@ app.get('/api/stats', (req, res) => {
 });
 
 // ---------- Admin-only mutation / management ----------
+function requirePersistentStorage(req, res, next) {
+  if (IS_RAILWAY && !STORAGE_PERSISTENT) {
+    return res.status(503).json({
+      error: 'Persistent Railway storage is not attached. Add a Railway Volume to this service before changing the collection. This safety lock prevents games disappearing on the next deployment.'
+    });
+  }
+  next();
+}
+
 app.get('/api/health', requireAdmin, (req, res) => {
-  res.json({ ok: true, dataDir: DATA_DIR, persistent: DATA_DIR === '/data', lookupConfigured: lookupConfigured(), lookupProviders: lookupProviders() });
+  const db = loadDb();
+  res.json({
+    ok: true,
+    dataDir: DATA_DIR,
+    dataFile: DATA_FILE,
+    persistent: STORAGE_PERSISTENT,
+    railway: IS_RAILWAY,
+    railwayVolumeAttached: Boolean(RAILWAY_VOLUME_MOUNT_PATH),
+    railwayVolumeMountPath: RAILWAY_VOLUME_MOUNT_PATH || null,
+    recoveredFrom: RECOVERED_FROM?.file || null,
+    games: db.games.length,
+    lookupConfigured: lookupConfigured(),
+    lookupProviders: lookupProviders()
+  });
 });
 
-app.post('/api/games', requireAdmin, (req, res) => {
+app.post('/api/games', requireAdmin, requirePersistentStorage, (req, res) => {
   const db = loadDb();
   const game = normalizeGame(req.body);
   if (!game.title) return res.status(400).json({ error: 'Title is required' });
@@ -469,7 +525,7 @@ app.post('/api/games', requireAdmin, (req, res) => {
   res.status(201).json(game);
 });
 
-app.put('/api/games/:id', requireAdmin, (req, res) => {
+app.put('/api/games/:id', requireAdmin, requirePersistentStorage, (req, res) => {
   const db = loadDb();
   const index = db.games.findIndex(g => g.id === req.params.id);
   if (index < 0) return res.status(404).json({ error: 'Game not found' });
@@ -481,7 +537,7 @@ app.put('/api/games/:id', requireAdmin, (req, res) => {
   res.json(game);
 });
 
-app.delete('/api/games/:id', requireAdmin, (req, res) => {
+app.delete('/api/games/:id', requireAdmin, requirePersistentStorage, (req, res) => {
   const db = loadDb();
   const before = db.games.length;
   db.games = db.games.filter(g => g.id !== req.params.id);
@@ -499,7 +555,7 @@ app.get('/api/export', requireAdmin, (req, res) => {
 
 // Auto-enrich one existing game using the configured lookup providers.
 // Existing metadata is preserved; only empty fields are filled.
-app.post('/api/games/:id/enrich', requireAdmin, async (req, res) => {
+app.post('/api/games/:id/enrich', requireAdmin, requirePersistentStorage, async (req, res) => {
   const db = loadDb();
   const game = db.games.find(g => g.id === req.params.id);
   if (!game) return res.status(404).json({ error: 'Game not found' });
@@ -537,7 +593,7 @@ app.post('/api/games/:id/enrich', requireAdmin, async (req, res) => {
   return res.status(404).json({ error: failures.length ? failures.join(' | ') : 'No confident metadata match found' });
 });
 
-app.post('/api/import', requireAdmin, (req, res) => {
+app.post('/api/import', requireAdmin, requirePersistentStorage, (req, res) => {
   const incoming = req.body;
   if (!incoming || !Array.isArray(incoming.games)) return res.status(400).json({ error:'Invalid backup file' });
   const db = loadDb();
@@ -557,7 +613,7 @@ app.post('/api/import', requireAdmin, (req, res) => {
 // Merge-import adds games/copies without replacing anything already in the collection.
 // Games are matched by title (case/spacing insensitive). Copies are considered duplicates
 // when platform, type, store, edition and region all match.
-app.post('/api/import/merge', requireAdmin, (req, res) => {
+app.post('/api/import/merge', requireAdmin, requirePersistentStorage, (req, res) => {
   const incoming = req.body;
   if (!incoming || !Array.isArray(incoming.games)) return res.status(400).json({ error:'Invalid games import file' });
 
