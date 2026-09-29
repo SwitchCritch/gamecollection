@@ -309,6 +309,10 @@ async function updateLookupStatus(game = null) {
     const providers = state.providers || [];
     const select = $('#lookupProvider');
     select.innerHTML = '<option value="all">Search all available sources</option>' + providers.map(p => `<option value="${esc(p.id)}" ${p.configured ? '' : 'disabled'}>${esc(p.name)}${p.configured ? '' : ' — not configured'}</option>`).join('');
+    // IGDB is the preferred/default source because its portrait covers work best in the collection grid.
+    const igdbReady = providers.some(p => p.id === 'igdb' && p.configured);
+    if (igdbReady) select.value = 'igdb';
+    else if (providers.some(p => p.configured)) select.value = providers.find(p => p.configured).id;
     const ready = providers.filter(p => p.configured).map(p => p.name);
     if (state.configured) {
       $('#lookupMessage').classList.remove('error');
@@ -563,9 +567,9 @@ async function openAdmin() {
 $('#adminAdd').addEventListener('click', () => { $('#adminDialog').close(); openForm(); });
 
 async function enrichMissingMetadata() {
-  const candidates = games.filter(g => !g.cover || !g.releaseDate || !g.developer || !g.publisher || !(g.genres || []).length || !g.description);
-  if (!candidates.length) { alert('All games already have metadata.'); return; }
-  if (!confirm(`Auto-fill missing metadata for ${candidates.length} game(s)?\n\nThis uses your configured game database and keeps any information you already entered.`)) return;
+  const candidates = games.filter(g => !g.cover || !g.releaseDate || !g.developer || !g.publisher || !(g.genres || []).length || !g.description || String(g.source?.provider || '').toLowerCase() !== 'igdb');
+  if (!candidates.length) { alert('All games already have metadata and IGDB artwork where available.'); return; }
+  if (!confirm(`Refresh/enrich ${candidates.length} game(s)?\n\nIGDB is tried first and its cover artwork will replace older cover art when a confident match is found. Other existing metadata is preserved.`)) return;
   const box = $('#enrichProgress');
   const btn = $('#enrichMissing');
   btn.disabled = true;

@@ -560,7 +560,7 @@ app.post('/api/games/:id/enrich', requireAdmin, requirePersistentStorage, async 
   const game = db.games.find(g => g.id === req.params.id);
   if (!game) return res.status(404).json({ error: 'Game not found' });
 
-  const preferred = ['thegamesdb','igdb','steam'];
+  const preferred = ['igdb','thegamesdb','steam'];
   const configured = lookupProviders().filter(p => p.configured);
   if (!configured.length) return res.status(503).json({ error: 'No lookup source is configured.' });
 
@@ -576,7 +576,9 @@ app.post('/api/games/:id/enrich', requireAdmin, requirePersistentStorage, async 
       // Avoid silently attaching clearly unrelated metadata.
       if (bestScore < 500) continue;
       const detail = await detailProvider(provider.id, best.id);
-      if (!game.cover && detail.cover) game.cover = detail.cover;
+      // Prefer IGDB artwork even when a different cover already exists.
+      // Other providers only fill the cover when it is missing.
+      if (detail.cover && (provider.id === 'igdb' || !game.cover)) game.cover = detail.cover;
       if (!game.releaseDate && detail.releaseDate) game.releaseDate = detail.releaseDate;
       if (!game.developer && detail.developer) game.developer = detail.developer;
       if (!game.publisher && detail.publisher) game.publisher = detail.publisher;

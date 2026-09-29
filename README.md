@@ -111,3 +111,8 @@ On Railway the app now reads the platform-provided `RAILWAY_VOLUME_MOUNT_PATH` a
 The app also checks common legacy paths (`/data/collection.json`, `/app/data/collection.json`, and the old project `data/collection.json`) and copies the best existing collection into the active volume if the new active collection file does not yet exist.
 
 When running on Railway without an attached volume, all collection-changing endpoints are safety-locked. The public site can still load, but Add/Edit/Delete/Import/Auto-enrich cannot write to temporary storage. Attach a Railway Volume to the service, redeploy, then open Admin to confirm the exact persistent mount path and saved game count.
+
+## v1.8.2
+- IGDB is now the default lookup source when configured.
+- Bulk metadata enrichment tries IGDB first, then TheGamesDB, then Steam.
+- A confident IGDB match replaces older cover artwork with IGDB portrait artwork while preserving other existing metadata.
