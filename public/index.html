@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#070914" />
+  <title>CRITCHELL GAME COLLECTION</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <header class="topbar">
+    <button class="brand" data-view="home" aria-label="Home">
+      <span class="brand-mark">CG</span>
+      <span><strong>CRITCHELL</strong><small>GAME COLLECTION</small></span>
+    </button>
+    <nav>
+      <button data-view="home">Collection</button>
+      <button data-view="platforms">Platforms</button>
+      <button data-view="digital">Digital</button>
+      <button data-view="physical">Physical</button>
+      <button data-view="backlog">Backlog</button>
+      <button data-view="favourites">Favourites</button>
+    </nav>
+    <button id="adminBtn" class="admin-btn">ADMIN</button>
+  </header>
+
+  <main id="app"></main>
+
+  <div id="toast" class="toast"></div>
+
+  <dialog id="gameDialog" class="modal">
+    <div class="modal-head">
+      <div><span class="eyebrow">ADMIN</span><h2 id="formTitle">Add game</h2></div>
+      <button class="icon-btn" data-close>×</button>
+    </div>
+    <form id="gameForm">
+      <input type="hidden" id="gameId">
+      <div class="form-grid">
+        <label class="span-2">Game title<input id="title" required placeholder="e.g. Resident Evil 4"></label>
+        <label>Release date<input id="releaseDate" type="date"></label>
+        <label>Status<select id="status"></select></label>
+        <label>Developer<input id="developer" placeholder="Capcom"></label>
+        <label>Publisher<input id="publisher" placeholder="Capcom"></label>
+        <label class="span-2">Genres<input id="genres" placeholder="Action, Survival Horror"></label>
+        <label class="span-2">Cover image URL<input id="cover" type="url" placeholder="https://..."></label>
+        <label>Rating (0–10)<input id="rating" type="number" min="0" max="10" step="0.5"></label>
+        <label class="check-label"><input id="favourite" type="checkbox"> Favourite</label>
+        <label class="span-2">Description<textarea id="description" rows="4"></textarea></label>
+        <label class="span-2">Personal notes<textarea id="notes" rows="3"></textarea></label>
+      </div>
+
+      <div class="copies-head">
+        <div><span class="eyebrow">OWNERSHIP</span><h3>Copies I own</h3></div>
+        <button type="button" id="addCopyBtn" class="secondary">+ Add another copy</button>
+      </div>
+      <div id="copies"></div>
+
+      <div class="form-actions">
+        <button type="button" class="secondary" data-close>Cancel</button>
+        <button type="submit" class="primary">Save game</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="detailDialog" class="modal detail-modal"></dialog>
+
+  <dialog id="adminDialog" class="modal admin-modal">
+    <div class="modal-head">
+      <div><span class="eyebrow">MANAGEMENT</span><h2>Collection admin</h2></div>
+      <button class="icon-btn" data-close>×</button>
+    </div>
+    <div class="admin-actions">
+      <button id="adminAdd" class="primary big-action">+ Add Game</button>
+      <a href="/api/export" class="secondary big-action">Export Backup</a>
+      <label class="secondary big-action file-action">Import Backup<input id="importFile" type="file" accept="application/json"></label>
+    </div>
+    <div id="storageStatus" class="storage-status"></div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>Game</th><th>Copies</th><th>Status</th><th></th></tr></thead>
+        <tbody id="adminRows"></tbody>
+      </table>
+    </div>
+  </dialog>
+
+  <template id="copyTemplate">
+    <section class="copy-card">
+      <div class="copy-grid">
+        <label>Platform<select class="copy-platform" required></select></label>
+        <label>Format<select class="copy-type"><option>Physical</option><option>Digital</option></select></label>
+        <label class="store-field">Store / Launcher<select class="copy-store"></select></label>
+        <label>Edition<input class="copy-edition" value="Standard" placeholder="Standard"></label>
+        <label>Region<input class="copy-region" placeholder="UK / PAL"></label>
+        <label class="span-2">Copy notes<input class="copy-notes" placeholder="Optional notes about this copy"></label>
+      </div>
+      <div class="physical-options">
+        <label><input type="checkbox" class="copy-box"> Box</label>
+        <label><input type="checkbox" class="copy-manual"> Manual</label>
+        <label><input type="checkbox" class="copy-media" checked> Disc / Cartridge</label>
+        <label><input type="checkbox" class="copy-steelbook"> Steelbook</label>
+      </div>
+      <button type="button" class="remove-copy">Remove copy</button>
+    </section>
+  </template>
+
+  <script src="/app.js"></script>
+</body>
+</html>
