@@ -21,3 +21,23 @@
 @media(max-width:520px){.lookup-results{grid-template-columns:1fr}.lookup-search-row{grid-template-columns:1fr}.lookup-result{grid-template-columns:54px 1fr}.lookup-result img,.lookup-cover-fallback{width:54px;height:74px}}
 
 .site-footer{padding:26px 20px 34px;text-align:center;color:var(--muted);font-size:.78rem}.site-footer a{color:var(--accent);font-weight:700}
+
+/* v1.2 admin authentication + clearer lookup flow */
+.admin-btn.logged-in{border-color:rgba(56,211,159,.65);box-shadow:0 0 0 1px rgba(56,211,159,.14) inset}
+.auth-modal{width:min(520px,calc(100% - 24px))}
+.auth-form{padding:26px}
+.auth-form>label{display:block;color:var(--muted);font-size:12px;margin-top:14px}
+.auth-form>label input{display:block;width:100%;margin-top:7px;background:#0f162b;border:1px solid var(--line);color:white;border-radius:10px;padding:12px}
+.auth-intro{display:flex;gap:16px;align-items:flex-start;padding:16px;border-radius:14px;background:#0e1529;border:1px solid var(--line);margin-bottom:16px}
+.auth-lock{font-size:28px;line-height:1}
+.auth-intro h3{margin:0 0 6px}.auth-intro p{margin:0;color:var(--muted);line-height:1.45}
+.auth-message{min-height:20px;color:var(--muted);font-size:13px;margin:8px 0}.auth-message.error{color:var(--danger)}
+.admin-session-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 24px;background:#0d1428;border-bottom:1px solid var(--line);color:var(--muted);font-size:13px}
+.lookup-panel-prominent{border:2px solid rgba(102,224,255,.48);background:linear-gradient(135deg,rgba(0,225,255,.08),rgba(122,92,255,.09));box-shadow:0 0 30px rgba(40,190,255,.07)}
+.lookup-panel-prominent .lookup-heading h3{font-size:22px;color:white}
+.lookup-panel-prominent .lookup-search-row input{font-size:16px;padding:14px 15px;border:1px solid rgba(102,224,255,.45);background:#0b1328;color:white;border-radius:11px}
+.lookup-panel-prominent .lookup-search-row .primary{min-width:150px}
+.lookup-question{display:block;color:white;font-weight:700;font-size:.78rem;margin-top:8px}
+.lookup-result .choose{display:block;color:var(--cyan);font-weight:800;margin-top:3px;font-size:.72rem;letter-spacing:.02em}
+.lookup-message code{color:white;background:#0b1221;border:1px solid var(--line);border-radius:5px;padding:2px 5px}
+@media(max-width:560px){.admin-session-bar{padding:12px 18px}.lookup-panel-prominent .lookup-heading h3{font-size:19px}}

@@ -25,7 +25,7 @@
       <button data-view="backlog">Backlog</button>
       <button data-view="favourites">Favourites</button>
     </nav>
-    <button id="adminBtn" class="admin-btn">ADMIN</button>
+    <button id="adminBtn" class="admin-btn">ADMIN LOGIN</button>
   </header>
 
   <main id="app"></main>
@@ -43,9 +43,9 @@
       <input type="hidden" id="sourceId">
       <input type="hidden" id="sourceUrl">
 
-      <section class="lookup-panel">
+      <section class="lookup-panel lookup-panel-prominent">
         <div class="lookup-heading">
-          <div><span class="eyebrow">GAME LOOKUP</span><h3>Find the game automatically</h3><p>Type a title and choose the correct game from the matches.</p></div>
+          <div><span class="eyebrow">STEP 1 · SEARCH THE GAME DATABASE</span><h3>What game are you adding?</h3><p>Type the name, then choose the correct result when I ask “Do you mean this one?”</p></div>
           <span class="lookup-provider">Powered by <a href="https://rawg.io/" target="_blank" rel="noopener">RAWG</a></span>
         </div>
         <div class="lookup-search-row">
@@ -85,11 +85,36 @@
 
   <dialog id="detailDialog" class="modal detail-modal"></dialog>
 
+  <dialog id="authDialog" class="modal auth-modal">
+    <div class="modal-head">
+      <div><span class="eyebrow">PRIVATE AREA</span><h2 id="authTitle">Admin login</h2></div>
+      <button class="icon-btn" data-close>×</button>
+    </div>
+    <form id="authForm" class="auth-form">
+      <div class="auth-intro">
+        <div class="auth-lock">🔒</div>
+        <div>
+          <h3 id="authHeading">Collection management is protected</h3>
+          <p id="authText">Log in to add, edit or delete games.</p>
+        </div>
+      </div>
+      <div id="authMessage" class="auth-message"></div>
+      <label id="authUsernameWrap">Username<input id="authUsername" autocomplete="username" required></label>
+      <label id="authPasswordWrap">Password<input id="authPassword" type="password" autocomplete="current-password" required></label>
+      <label id="authConfirmWrap" hidden>Confirm password<input id="authConfirmPassword" type="password" autocomplete="new-password"></label>
+      <div class="form-actions">
+        <button type="button" class="secondary" data-close>Cancel</button>
+        <button id="authSubmit" type="submit" class="primary">Log in</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="adminDialog" class="modal admin-modal">
     <div class="modal-head">
       <div><span class="eyebrow">MANAGEMENT</span><h2>Collection admin</h2></div>
       <button class="icon-btn" data-close>×</button>
     </div>
+    <div class="admin-session-bar"><span id="adminSessionText">Logged in as admin</span><button id="logoutBtn" class="tiny">Log out</button></div>
     <div class="admin-actions">
       <button id="adminAdd" class="primary big-action">+ Add Game</button>
       <a href="/api/export" class="secondary big-action">Export Backup</a>

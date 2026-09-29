@@ -1,6 +1,13 @@
-# CRITCHELL GAME COLLECTION
+# CRITCHELL GAME COLLECTION v1.2
 
 A Railway-ready personal game catalogue for physical and digital games.
+
+## What changed in v1.2
+- **Real admin login**: visitors can browse the collection, but only the logged-in admin can add, edit, delete, import/export or use the game lookup tools.
+- **Server-side protection**: admin-only API routes return `401 Admin login required` even if somebody tries to call them directly.
+- **Much clearer game lookup**: Add Game opens with **STEP 1 · SEARCH THE GAME DATABASE**. Search results explicitly ask **“Do you mean this one?”** and provide **SELECT THIS GAME**.
+- The homepage **+ Add Game** button only appears while the admin is logged in.
+- The Admin screen includes a **Log out** button.
 
 ## Features
 - One game can have multiple owned copies/platforms.
@@ -14,48 +21,99 @@ A Railway-ready personal game catalogue for physical and digital games.
 - JSON backup export/import.
 - Railway persistent storage support at `/data`.
 - Responsive phone/desktop interface.
+- Automatic metadata lookup using RAWG.
+
+## Railway setup
+
+Push/upload this project to GitHub and deploy the repository on Railway. Railway will install dependencies and run `npm start`.
+
+### 1. Persistent collection storage
+Create a Railway Volume and mount it at:
+
+```text
+/data
+```
+
+This keeps `collection.json` safe across redeploys.
+
+### 2. Admin login — REQUIRED
+In **Railway → your service → Variables**, add:
+
+```text
+ADMIN_USERNAME=your-admin-name
+ADMIN_PASSWORD=choose-a-strong-password
+```
+
+For example, `ADMIN_USERNAME=Malcolm` is fine, but choose your own private password.
+
+Do **not** put the real password into `server.js`, GitHub, or this README. Railway Variables keep it outside the code repository.
+
+Optional extra security variable:
+
+```text
+ADMIN_SESSION_SECRET=a-long-random-secret
+```
+
+If you do not add `ADMIN_SESSION_SECRET`, the app derives a signing secret from the admin password. Changing the admin password will automatically invalidate old login sessions.
+
+After adding/changing these variables, redeploy/restart the Railway service.
+
+When configured, the site header says **ADMIN LOGIN**. After a successful login it changes to **ADMIN** and the **+ Add Game** button becomes visible.
+
+### 3. Automatic game search — REQUIRED FOR LOOKUP
+Create a RAWG personal/hobby API key at:
+
+https://rawg.io/apidocs
+
+Then add this Railway variable:
+
+```text
+RAWG_API_KEY=your-rawg-key
+```
+
+Redeploy/restart the service.
+
+If this variable is missing, Add Game clearly reports that automatic lookup is not configured. Manual game entry still works.
+
+## How automatic lookup works
+1. Log in through **ADMIN LOGIN**.
+2. Open **Admin → + Add Game**.
+3. The first section is **STEP 1 · SEARCH THE GAME DATABASE**.
+4. Type a title, for example `Silent Hill 2`.
+5. Press **Search games**.
+6. The site shows up to 12 matches with cover art, year, genres and platforms.
+7. Each result asks **Do you mean this one?**.
+8. Press **SELECT THIS GAME** on the correct match.
+9. Title, release date, developer, publisher, genres, cover and description are filled automatically.
+10. Choose the exact platform, Physical/Digital format and store for the copy you own, then save.
+
+## Public vs admin permissions
+Public visitors can:
+- Browse the collection.
+- Search/filter the collection.
+- Open game details.
+
+Only a logged-in admin can:
+- Add games.
+- Search RAWG while adding/editing.
+- Edit games.
+- Delete games.
+- Import a backup.
+- Export a backup.
+- View admin/storage diagnostics.
 
 ## Run locally
 
 ```bash
 npm install
-npm start
+ADMIN_USERNAME=Malcolm ADMIN_PASSWORD='your-password' RAWG_API_KEY='your-key' npm start
 ```
 
 Open http://localhost:3000
 
-## Deploy to Railway
-1. Upload/push this project to GitHub.
-2. Create a Railway project from the GitHub repository.
-3. Railway will install dependencies and run `npm start`.
-4. Add a Railway Volume and mount it at `/data`.
-5. Redeploy. The Admin panel should then say persistent storage is detected.
+## Data and backups
+The catalogue itself is stored as `/data/collection.json` when the Railway volume exists, otherwise it falls back to the local `data/` folder.
 
-## Data
-The collection is stored as `collection.json`. On Railway with a `/data` Volume it lives at:
+Log in, open **ADMIN**, then use **Export Backup** to download the complete collection as JSON. Use **Import Backup** to restore it.
 
-`/data/collection.json`
-
-Without a volume it falls back to the local `data/` folder.
-
-## Backups
-Open ADMIN and click **Export Backup**. This downloads the complete collection as JSON. Use **Import Backup** to restore it.
-
-
-## Automatic game lookup (RAWG)
-
-The Add Game screen can search RAWG and show a selection of possible matches before filling the form. This works for PC/Steam games and console games including PlayStation, Xbox, Nintendo and many older systems.
-
-1. Create a free personal/hobby API key at https://rawg.io/apidocs
-2. In Railway, open your project/service and go to **Variables**.
-3. Add a variable named `RAWG_API_KEY`.
-4. Paste your RAWG API key as the value.
-5. Redeploy/restart the service if Railway does not do so automatically.
-
-Without `RAWG_API_KEY`, the catalogue still works normally; only automatic lookup is disabled.
-
-### How lookup works
-
-Open **Admin → Add Game**, type a title into **Find the game automatically**, and click **Search games**. The site shows up to 12 likely matches with cover art, year and platforms. Click **Do you mean this one?** on the correct result. The title, release date, developer, publisher, genres, cover and description are then filled automatically.
-
-RAWG attribution is included in the site footer as required for its personal/hobby API usage.
+Game metadata/artwork lookup is powered by RAWG; attribution is included in the site footer.
