@@ -75,6 +75,7 @@ function visibleGames() {
   if (view === 'physical') list = list.filter(g => g.copies?.some(c => c.type === 'Physical'));
   if (view === 'backlog') list = list.filter(g => ['Backlog', 'Unplayed'].includes(g.status));
   if (view === 'favourites') list = list.filter(g => g.favourite);
+  if (view === 'completed') list = list.filter(g => ['Completed', '100% / Platinum'].includes(g.status));
   if (platformFilter) list = list.filter(g => g.copies?.some(c => c.platform === platformFilter));
   if (search) {
     const q = search.toLowerCase();
@@ -101,25 +102,25 @@ function card(g) {
 
 function homeView() {
   const list = visibleGames();
-  const title = platformFilter ? platformFilter : view === 'home' ? 'My Game Collection' : ({ digital:'Digital Library', physical:'Physical Collection', backlog:'Backlog', favourites:'Favourites' }[view] || 'Collection');
+  const title = platformFilter ? platformFilter : view === 'home' ? 'My Game Collection' : ({ digital:'Digital Library', physical:'Physical Collection', backlog:'Backlog', favourites:'Favourites', completed:'Completed Games' }[view] || 'Collection');
   const adminAdd = auth.authenticated ? '<button class="primary" id="quickAdd">+ Add Game</button>' : '';
   const emptyText = auth.authenticated ? 'Add your first game or change the current filters.' : 'No games match the current view.';
-  return `<section class="hero">
-      <div><span class="eyebrow">PERSONAL GAMING ARCHIVE</span><h1>CRITCHELL <span>GAME COLLECTION</span></h1><p>Every physical and digital game in one place — across consoles, PC storefronts, editions and generations.</p></div>
-      <div class="hero-card"><span>TOTAL OWNED COPIES</span><strong>${stats.copies || 0}</strong><span>across ${stats.platforms || 0} platforms</span></div>
+  return `<section class="hero hero-with-logo">
+      <div class="hero-logo-wrap"><img class="hero-logo" src="/critchell-game-collection-logo.png" alt="Critchell Game Collection"><p>Every physical and digital game in one place — across consoles, PC storefronts, editions and generations.</p></div>
+      <button class="hero-card hero-stat-button" type="button" data-stat-view="home" aria-label="Show all owned games"><span>TOTAL OWNED COPIES</span><strong>${stats.copies || 0}</strong><span>across ${stats.platforms || 0} platforms</span></button>
     </section>
-    <section class="stats">
-      <div class="stat"><strong>${stats.games || 0}</strong><span>Unique Games</span></div>
-      <div class="stat"><strong>${stats.physical || 0}</strong><span>Physical</span></div>
-      <div class="stat"><strong>${stats.digital || 0}</strong><span>Digital</span></div>
-      <div class="stat"><strong>${stats.platforms || 0}</strong><span>Platforms</span></div>
-      <div class="stat"><strong>${stats.completed || 0}</strong><span>Completed</span></div>
-      <div class="stat"><strong>${stats.favourites || 0}</strong><span>Favourites</span></div>
+    <section class="stats" aria-label="Collection statistics">
+      <button class="stat stat-button ${view === 'home' && !platformFilter ? 'active' : ''}" type="button" data-stat-view="home"><strong>${stats.games || 0}</strong><span>Unique Games</span><small>View all games</small></button>
+      <button class="stat stat-button ${view === 'physical' ? 'active' : ''}" type="button" data-stat-view="physical"><strong>${stats.physical || 0}</strong><span>Physical</span><small>View physical copies</small></button>
+      <button class="stat stat-button ${view === 'digital' ? 'active' : ''}" type="button" data-stat-view="digital"><strong>${stats.digital || 0}</strong><span>Digital</span><small>View digital games</small></button>
+      <button class="stat stat-button ${view === 'platforms' ? 'active' : ''}" type="button" data-stat-view="platforms"><strong>${stats.platforms || 0}</strong><span>Platforms</span><small>Browse platforms</small></button>
+      <button class="stat stat-button ${view === 'completed' ? 'active' : ''}" type="button" data-stat-view="completed"><strong>${stats.completed || 0}</strong><span>Completed</span><small>View completed games</small></button>
+      <button class="stat stat-button ${view === 'favourites' ? 'active' : ''}" type="button" data-stat-view="favourites"><strong>${stats.favourites || 0}</strong><span>Favourites</span><small>View favourites</small></button>
     </section>
     <div class="toolbar">
       <div class="search"><input id="searchBox" value="${esc(search)}" placeholder="Search title, platform, developer, publisher or genre…"></div>
       <select id="platformSelect" class="filter"><option value="">All platforms</option>${platformOptions(platformFilter, true)}</select>
-      <select id="formatSelect" class="filter"><option value="">Current view</option><option value="home">All games</option><option value="physical">Physical</option><option value="digital">Digital</option><option value="backlog">Backlog</option><option value="favourites">Favourites</option></select>
+      <select id="formatSelect" class="filter"><option value="">Current view</option><option value="home">All games</option><option value="physical">Physical</option><option value="digital">Digital</option><option value="backlog">Backlog</option><option value="completed">Completed</option><option value="favourites">Favourites</option></select>
     </div>
     <div class="section-head"><div><span class="eyebrow">LIBRARY</span><h2>${esc(title)}</h2><p>${list.length} ${list.length === 1 ? 'game' : 'games'} shown</p></div>${adminAdd}</div>
     ${list.length ? `<section class="game-grid">${list.map(card).join('')}</section>` : `<div class="empty"><strong>No games here yet</strong>${emptyText}</div>`}`;
@@ -144,6 +145,13 @@ function bindPage() {
   $('#platformSelect')?.addEventListener('change', e => { platformFilter = e.target.value; render(); });
   $('#formatSelect')?.addEventListener('change', e => { if (e.target.value) { view = e.target.value; platformFilter = ''; render(); } });
   $('#quickAdd')?.addEventListener('click', () => openForm());
+  $$('[data-stat-view]').forEach(el => el.addEventListener('click', () => {
+    view = el.dataset.statView;
+    platformFilter = '';
+    search = '';
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
   $$('[data-game]').forEach(el => el.addEventListener('click', () => openDetail(el.dataset.game)));
   $$('[data-platform]').forEach(el => el.addEventListener('click', () => { platformFilter = el.dataset.platform; view = 'home'; render(); }));
 }
