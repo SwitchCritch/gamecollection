@@ -512,6 +512,86 @@ app.post('/api/import', requireAdmin, (req, res) => {
   res.json({ ok:true, games: imported.games.length });
 });
 
+
+// Merge-import adds games/copies without replacing anything already in the collection.
+// Games are matched by title (case/spacing insensitive). Copies are considered duplicates
+// when platform, type, store, edition and region all match.
+app.post('/api/import/merge', requireAdmin, (req, res) => {
+  const incoming = req.body;
+  if (!incoming || !Array.isArray(incoming.games)) return res.status(400).json({ error:'Invalid games import file' });
+
+  const db = loadDb();
+  const titleKey = value => String(value || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-GB');
+  const copyKey = copy => [copy.platform, copy.type, copy.store, copy.edition, copy.region]
+    .map(v => String(v || '').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-GB'))
+    .join('||');
+
+  let addedGames = 0;
+  let mergedGames = 0;
+  let addedCopies = 0;
+  let skippedDuplicateCopies = 0;
+  let skippedInvalidGames = 0;
+
+  const existingByTitle = new Map(db.games.map(g => [titleKey(g.title), g]));
+
+  for (const rawGame of incoming.games) {
+    const normalized = normalizeGame(rawGame, rawGame);
+    if (!normalized.title || !normalized.copies.length) {
+      skippedInvalidGames++;
+      continue;
+    }
+
+    const key = titleKey(normalized.title);
+    let target = existingByTitle.get(key);
+
+    if (!target) {
+      // Regenerate IDs so imported files can safely be reused across collections.
+      normalized.id = crypto.randomUUID();
+      normalized.copies = normalized.copies.map(c => ({ ...c, id: crypto.randomUUID() }));
+      normalized.createdAt = new Date().toISOString();
+      normalized.updatedAt = normalized.createdAt;
+      db.games.push(normalized);
+      existingByTitle.set(key, normalized);
+      addedGames++;
+      addedCopies += normalized.copies.length;
+      continue;
+    }
+
+    mergedGames++;
+    const existingCopyKeys = new Set((target.copies || []).map(copyKey));
+    for (const copy of normalized.copies) {
+      const ckey = copyKey(copy);
+      if (existingCopyKeys.has(ckey)) {
+        skippedDuplicateCopies++;
+        continue;
+      }
+      target.copies ||= [];
+      target.copies.push({ ...copy, id: crypto.randomUUID() });
+      existingCopyKeys.add(ckey);
+      addedCopies++;
+    }
+
+    // Preserve the user's existing data, but fill empty metadata from the imported game.
+    for (const field of ['cover','releaseDate','developer','publisher','description','notes']) {
+      if (!target[field] && normalized[field]) target[field] = normalized[field];
+    }
+    if ((!target.genres || !target.genres.length) && normalized.genres?.length) target.genres = normalized.genres;
+    if (!target.source && normalized.source) target.source = normalized.source;
+    target.updatedAt = new Date().toISOString();
+  }
+
+  saveDb(db);
+  res.json({
+    ok: true,
+    totalGames: db.games.length,
+    addedGames,
+    mergedGames,
+    addedCopies,
+    skippedDuplicateCopies,
+    skippedInvalidGames
+  });
+});
+
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(PORT, () => console.log(`Critchell Game Collection running on port ${PORT}; data: ${DATA_FILE}`));

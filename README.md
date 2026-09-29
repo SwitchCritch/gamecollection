@@ -90,3 +90,13 @@ npm start
 Open `http://localhost:3000`.
 
 Without lookup API credentials, manual game entry still works normally.
+
+
+## Import Games (Merge)
+
+Admin now has two separate JSON import actions:
+
+- **Import Games (Merge)** adds games/copies to the existing collection without deleting anything. Re-importing the same list safely skips duplicate copies.
+- **Restore Full Backup** is the original disaster-recovery function and replaces the complete collection.
+
+For Steam batch files generated for this site, use **Import Games (Merge)**.

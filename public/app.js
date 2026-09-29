@@ -559,14 +559,39 @@ async function openAdmin() {
 }
 
 $('#adminAdd').addEventListener('click', () => { $('#adminDialog').close(); openForm(); });
+
+$('#mergeImportFile').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const count = Array.isArray(data.games) ? data.games.length : 0;
+    if (!count) throw new Error('This file does not contain any games.');
+    if (!confirm(`Add/merge ${count} games into your current collection? Existing games will NOT be deleted.`)) return;
+    const result = await api('/api/import/merge', { method: 'POST', body: JSON.stringify(data) });
+    const parts = [
+      `${result.addedGames} new game${result.addedGames === 1 ? '' : 's'} added`,
+      `${result.addedCopies} owned cop${result.addedCopies === 1 ? 'y' : 'ies'} added`
+    ];
+    if (result.skippedDuplicateCopies) parts.push(`${result.skippedDuplicateCopies} duplicate cop${result.skippedDuplicateCopies === 1 ? 'y' : 'ies'} skipped`);
+    toast('Import complete');
+    alert(`Import complete.\n\n${parts.join('\n')}`);
+    $('#adminDialog').close();
+    await load();
+  } catch (err) {
+    alert('Could not merge games: ' + err.message);
+  }
+  e.target.value = '';
+});
+
 $('#importFile').addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
   try {
     const data = JSON.parse(await file.text());
-    if (!confirm(`Import this backup? It contains ${data.games?.length || 0} games and will replace the current collection.`)) return;
+    if (!confirm(`RESTORE FULL BACKUP? It contains ${data.games?.length || 0} games and will REPLACE the current collection. Use Import Games (Merge) if you only want to add games.`)) return;
     await api('/api/import', { method: 'POST', body: JSON.stringify(data) });
-    toast('Backup imported');
+    toast('Full backup restored');
     $('#adminDialog').close();
     await load();
   } catch (err) {
