@@ -83,3 +83,5 @@
 
 /* v1.8.6: Digital storefront folders live inside the normal Digital page */
 .digital-folder-intro{margin:4px 0 24px;padding:20px 22px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(135deg,rgba(84,228,255,.06),rgba(143,103,255,.07))}.digital-folder-intro h2{margin-top:5px}.digital-folder-intro p{margin:7px 0 0;color:var(--muted)}
+
+.site-version{display:inline-block;margin-left:10px;padding:3px 7px;border:1px solid var(--line);border-radius:999px;color:var(--cyan);font-family:Orbitron;font-size:10px;letter-spacing:.05em}.digital-store-head{margin-bottom:26px}

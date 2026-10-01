@@ -185,45 +185,27 @@ function homeView() {
 }
 
 function digitalStoresView() {
-  const configuredStores = config?.stores || [];
-  const storeGameIds = {};
-  const storeCopyCounts = {};
-
-  configuredStores.forEach(store => {
-    storeGameIds[store] = new Set();
-    storeCopyCounts[store] = 0;
-  });
-
-  games.forEach(g => (g.copies || []).forEach(c => {
-    if (c.type !== 'Digital') return;
-    const store = c.store || 'Other';
-    if (!storeGameIds[store]) storeGameIds[store] = new Set();
-    storeGameIds[store].add(g.id);
-    storeCopyCounts[store] = (storeCopyCounts[store] || 0) + 1;
-  }));
-
-  const orderedStores = [...new Set([...configuredStores, ...Object.keys(storeGameIds)])];
-  const cards = orderedStores.map(store => {
-    const gamesCount = storeGameIds[store]?.size || 0;
-    const copiesCount = storeCopyCounts[store] || 0;
-    const initials = store.split(/\s+/).filter(Boolean).slice(0, 3).map(w => w[0]).join('').toUpperCase();
-    return `<button class="store-folder ${gamesCount ? '' : 'empty-store'}" type="button" data-store="${esc(store)}">
-      <span class="folder-tab"></span>
-      <span class="store-folder-mark">${esc(initials || 'D')}</span>
-      <span class="store-folder-copy"><strong>${esc(store)}</strong><small>${gamesCount} ${gamesCount === 1 ? 'game' : 'games'} · ${copiesCount} ${copiesCount === 1 ? 'copy' : 'copies'}</small></span>
-      <span class="store-folder-arrow">→</span>
-    </button>`;
-  }).join('');
-
   const digitalGames = games.filter(g => g.copies?.some(c => c.type === 'Digital')).length;
   const digitalCopies = games.reduce((sum, g) => sum + (g.copies || []).filter(c => c.type === 'Digital').length, 0);
+  const adminAdd = auth.authenticated ? '<button class="primary" id="quickAdd">+ Add Game</button>' : '';
 
-  return `<section class="hero compact-hero">
-    <div><span class="eyebrow">DIGITAL LIBRARY</span><h1>CHOOSE A <span>STOREFRONT</span></h1><p>Your digital collection is organised by launcher and store. Pick one to see only the games you own there.</p></div>
-    <div class="hero-card"><strong>${digitalGames}</strong><span>digital games · ${digitalCopies} owned copies</span></div>
-  </section>
-  <div class="section-head"><div><span class="eyebrow">STORES & LAUNCHERS</span><h2>My Digital Collection</h2><p>Select a storefront to open that part of your library.</p></div></div>
-  <section class="store-folder-grid">${cards}</section>`;
+  return `<section class="hero hero-with-logo">
+      <div class="hero-logo-wrap"><img class="hero-logo" src="/critchell-game-collection-logo.png" alt="Critchell Game Collection"><p>Every physical and digital game in one place — across consoles, PC storefronts, editions and generations.</p></div>
+      <button class="hero-card hero-stat-button" type="button" data-stat-view="home" aria-label="Show all owned games"><span>TOTAL OWNED COPIES</span><strong>${stats.copies || 0}</strong><span>across ${stats.platforms || 0} platforms</span></button>
+    </section>
+    <section class="stats" aria-label="Collection statistics">
+      <button class="stat stat-button" type="button" data-stat-view="home"><strong>${stats.games || 0}</strong><span>Unique Games</span><small>View all games</small></button>
+      <button class="stat stat-button" type="button" data-stat-view="physical"><strong>${stats.physical || 0}</strong><span>Physical</span><small>View physical copies</small></button>
+      <button class="stat stat-button active" type="button" data-stat-view="digital"><strong>${stats.digital || 0}</strong><span>Digital</span><small>Browse stores & launchers</small></button>
+      <button class="stat stat-button" type="button" data-stat-view="platforms"><strong>${stats.platforms || 0}</strong><span>Platforms</span><small>Browse platforms</small></button>
+      <button class="stat stat-button" type="button" data-stat-view="completed"><strong>${stats.completed || 0}</strong><span>Completed</span><small>View completed games</small></button>
+      <button class="stat stat-button" type="button" data-stat-view="favourites"><strong>${stats.favourites || 0}</strong><span>Favourites</span><small>View favourites</small></button>
+    </section>
+    <div class="section-head digital-store-head">
+      <div><span class="eyebrow">DIGITAL LIBRARY</span><h2>Digital Stores & Launchers</h2><p>${digitalGames} digital games · ${digitalCopies} owned digital copies. Choose a store to open its library.</p></div>
+      ${adminAdd ? `<div class="section-actions">${adminAdd}</div>` : ''}
+    </div>
+    ${digitalStoreFolders()}`;
 }
 
 function platformsView() {
@@ -234,7 +216,9 @@ function platformsView() {
 }
 
 function render() {
-  $('#app').innerHTML = view === 'platforms' ? platformsView() : homeView();
+  $('#app').innerHTML = view === 'platforms'
+    ? platformsView()
+    : (view === 'digital' && !storeFilter ? digitalStoresView() : homeView());
   $$('[data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   bindPage();
   updateAdminButton();

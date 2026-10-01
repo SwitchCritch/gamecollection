@@ -1,3 +1,7 @@
+## Version 1.8.7
+
+Digital now opens a dedicated Stores & Launchers folder page. The footer shows v1.8.7 so you can verify the deployed frontend.
+
 # CRITCHELL GAME COLLECTION
 
 Personal physical + digital game catalogue, designed for Railway.
